@@ -1,4 +1,6 @@
 .idea
 assets
-convert.exe
-zlib1.dll
+*.exe
+*.dll
+node_modules
+package-lock.json
