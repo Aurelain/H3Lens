@@ -13,6 +13,11 @@ module.exports = {
     readUInt8: (handle) => {
         return handle.buffer.readUInt8(handle.pos++);
     },
+    readUInt16: (handle) => {
+        const value = handle.buffer.readUInt16LE(handle.pos);
+        handle.pos += 2;
+        return value;
+    },
     readUInt32: (handle) => {
         const value = handle.buffer.readUInt32LE(handle.pos);
         handle.pos += 4;

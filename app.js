@@ -3,6 +3,8 @@ const path = require('path');
 const zlib = require('zlib');
 const nativeImage = require('electron').nativeImage;
 const BufferUtils = require('./utils/BufferUtils');
+const rgbToHex = require('./utils/rgbToHex');
+const log = require('./utils/log');
 
 const SOURCE_DIR = "D:\\H3\\HoMM 3 Complete\\Data";
 const DESTINATION_DIR = 'assets';
@@ -59,8 +61,8 @@ const run = () => {
                     // save(rgba, w, h, destination);
                     // show(rgba, w, h);
                 } else { // DEF
-                    fs.writeFileSync(path.join(DESTINATION_DIR, item.name), itemBuffer);
-                    parseDef2(itemBuffer);
+                    //fs.writeFileSync(path.join(DESTINATION_DIR, item.name), itemBuffer);
+                    parseDef(itemBuffer);
                     return;
                 }
             }
@@ -98,63 +100,10 @@ const parsePcxWithPalette = (buffer, w, h) => {
 };
 
 /**
- *
+ * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
  */
 const parseDef = (buffer) => {
-    let pos = 0;
-    const type = buffer.readUInt32LE(pos);
-    pos += 4;
-    pos += 8; // skip width and height
-    const groupsCount = buffer.readUInt32LE(pos);
-    pos += 4;
-    const palette = [];
-    for (let i = 0; i < 256; i++) {
-        const r = buffer.readUInt8(pos);
-        const g = buffer.readUInt8(pos + 1);
-        const b = buffer.readUInt8(pos + 2);
-        pos += 3;
-        palette[i] = {r, g, b};
-    }
-    const sprites = [];
-    for (let i = 0; i < groupsCount; i++) {
-        pos += 4; // skip group id
-        const spritesCount = buffer.readUInt32LE(pos);
-        pos += 4;
-        pos += 8; // skip unknown
-        const names = [];
-        for (let j = 0; j < spritesCount; j++) {
-            const name = buffer.slice(pos, pos + 13);
-            pos += 13;
-            names.push(clean(name.toString()));
-        }
-        for (let j = 0; j < spritesCount; j++) {
-            sprites.push({
-                name: names[j],
-                offset: buffer.readUInt32LE(pos),
-            });
-            pos += 4;
-        }
-    }
-    /*
-    for (const {name, offset} of sprites) {
-        pos = offset;
-        const size = buffer.readUInt32LE(pos);
-        pos += 4;
-        const format = buffer.readUInt32LE(pos);
-        pos += 4;
-        const fullWidth = buffer.readUInt32LE(pos);
-        pos += 4;
-        const fullHeight = buffer.readUInt32LE(pos);
-        pos += 4;
-        console.log(name, format, fullWidth);
-    }*/
-    console.log('sprites',sprites);
-};
-/**
- *
- */
-const parseDef2 = (buffer) => {
-    const {open, seek, read, readUInt8, readUInt32} = BufferUtils;
+    const {open, seek, read, readUInt8, readUInt16, readUInt32} = BufferUtils;
     const b = open(buffer);
     const type = readUInt32(b);
     seek(b, 8); // skip width and height
@@ -165,9 +114,9 @@ const parseDef2 = (buffer) => {
         const green = readUInt8(b);
         const blue = readUInt8(b);
         palette[i] = {red, green, blue};
+        // console.log(i, rgbToHex(red, green, blue));
     }
     const sprites = [];
-    let aur = 0;
     for (let i = 0; i < groupsCount; i++) {
         seek(b, 4); // skip group id
         const spritesCount = readUInt32(b);
@@ -185,6 +134,9 @@ const parseDef2 = (buffer) => {
         }
     }
     for (const {name, offset} of sprites) {
+        // if (!name.match(/AH16_02/)) {
+        //     continue;
+        // }
         seek(b, offset, 0);
         const size = readUInt32(b);
         const format = readUInt32(b);
@@ -194,7 +146,57 @@ const parseDef2 = (buffer) => {
         const height = readUInt32(b);
         const leftMargin = readUInt32(b);
         const topMargin = readUInt32(b);
-        console.log({name, format, fullWidth,fullHeight,width,height,leftMargin,topMargin});
+        // console.log(JSON.stringify({name, offset, size, format, fullWidth, fullHeight, width, height, leftMargin, topMargin},null,4));
+        const baseOffset = 32;
+        switch (format) {
+            case 0: // pixel data is not compressed, copy data to surface
+                break;
+            case 1: // for each line we have offset of pixel data
+                break;
+            case 2:
+                break;
+            case 3:
+                const lineOffsets = [];
+                for (let i = 0; i < height; i++) {
+                    lineOffsets.push(readUInt16(b));
+                }
+                const rgba = new Uint8ClampedArray(width * height * 4);
+                let j = 0;
+                for (let i = 0; i < height; i++) {
+                    // const currentOffset = baseOffset + readUInt16(FDef + BaseOffset+i*2*(sprite.width/32));
+                    seek(b, offset + baseOffset + lineOffsets[i], 0);
+                    let totalRowLength = 0;
+                    while (totalRowLength < width) {
+                        const segment = readUInt8(b);
+                        const code = Math.floor(segment / 32);
+                        const length = (segment & 31) + 1;
+                        if (code === 7) {// Raw data
+                            const sequence = read(b, length);
+                            for (const colorIndex of sequence) {
+                                rgba[j++] = palette[colorIndex].red;
+                                rgba[j++] = palette[colorIndex].green;
+                                rgba[j++] = palette[colorIndex].blue;
+                                rgba[j++] = 255;
+                            }
+                        } else { // RLE
+                            for (let i = 0; i < length; i++) {
+                                rgba[j++] = palette[code].red;
+                                rgba[j++] = palette[code].green;
+                                rgba[j++] = palette[code].blue;
+                                rgba[j++] = 255;
+                            }
+                        }
+                        totalRowLength += length;
+                    }
+                }
+                show(rgba, width, height);
+                // const destination = path.join(DESTINATION_DIR, name.replace(/PCX$/, 'PNG'));
+                // save(rgba, width, height, destination);
+                break;
+            default:
+                console.log('Unknown format!', format);
+                break;
+        }
     }
 };
 
