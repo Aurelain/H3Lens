@@ -19,39 +19,47 @@ const extractAssets = (lodPath, destinationDir) => {
     const lodName = lodPath.match(/[^\/\\]+$/);
     fs.ensureDirSync(destinationDir);
 
-    const f = open(lodPath);
-    seek(f, 8);
-    const itemsCount = readUInt(f);
-    seek(f, 92, 0); // the records always start at 0x5C
+    const f = fs.readFileSync(lodPath);
+    const itemsCount = f.readUInt32LE(8);
+    let p = 92; // the records always start at 0x5C
+
     let list = [];
     for (let i = 0; i < itemsCount; i++) {
         const item = {};
-        item.name = clean(readString(f, 12));
-        seek(f, 4, 1); // unknown
-        item.begin = readUInt(f);
-        item.usize = readUInt(f);
-        seek(f, 4, 1); // unknown
-        item.csize = readUInt(f);
+
+        item.name = clean(f.slice(p, p + 12).toString());
+        p += 12;
+
+        p += 4; // skip 4 unknown bytes
+
+        item.begin = f.readUInt32LE(p);
+        p += 4;
+
+        item.usize = f.readUInt32LE(p);
+        p += 4;
+
+        p += 4; // skip 4 unknown bytes
+
+        item.csize = f.readUInt32LE(p);
+        p += 4;
+
         list.push(item);
     }
-    for (const item of list) {
-        const name = item.name;
-        // if (item.name !== "ADVDIG.DEF") {
-        //     continue;
-        // }
-        if (item.name.match(/\.PCX$|\.DEF$/)) {
-            seek(f, item.begin, 0);
+    for (const {name, begin, csize, usize} of list) {
+        // if (name !== "ADVDIG.DEF") continue;
+
+        if (name.match(/\.PCX$|\.DEF$/)) {
             let itemBuffer;
-            if (item.csize) {
-                const zipBuffer = read(f, item.csize);
+            if (csize) {
+                const zipBuffer = f.slice(begin, begin + csize);
                 itemBuffer = zlib.unzipSync(zipBuffer);
             } else {
-                itemBuffer = read(f, item.usize);
+                itemBuffer = f.slice(begin, begin + usize);
             }
-            if (item.name.match(/PCX$/)) {
-                const size = itemBuffer.readInt32LE(0);
-                const w = itemBuffer.readInt32LE(4);
-                const h = itemBuffer.readInt32LE(8);
+            if (name.match(/PCX$/)) {
+                const size = itemBuffer.readUInt32LE(0);
+                const w = itemBuffer.readUInt32LE(4);
+                const h = itemBuffer.readUInt32LE(8);
                 let rgba;
                 if (size === w * h) {
                     rgba = parsePcxWithPalette(itemBuffer, w, h);
@@ -65,7 +73,6 @@ const extractAssets = (lodPath, destinationDir) => {
             }
         }
     }
-    close(f);
 };
 
 /**
@@ -99,34 +106,44 @@ const parsePcxWithPalette = (buffer, w, h) => {
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
  */
-const parseDef = (buffer, destinationDir, defName) => {
+const parseDef = (f, destinationDir, defName) => {
     const {open, seek, read, readUInt8, readUInt16, readUInt32} = BufferUtils;
-    const b = open(buffer);
-    seek(b, 12); // skip type, width and height
-    const groupsCount = readUInt32(b);
+    let p = 12; // skip type, width and height
+
+    const groupsCount = f.readUInt32LE(p);
+    p += 4;
+
     const palette = [];
     for (let i = 0; i < 256; i++) {
-        const red = readUInt8(b);
-        const green = readUInt8(b);
-        const blue = readUInt8(b);
-        palette[i] = {red, green, blue};
-        // console.log(i, rgbToHex(red, green, blue));
+        palette[i] = {
+            r: f.readUInt8(p),
+            g: f.readUInt8(p + 1),
+            b: f.readUInt8(p + 2)
+        };
+        p += 3;
     }
+
     const sprites = [];
     for (let i = 0; i < groupsCount; i++) {
-        seek(b, 4); // skip group id
-        const spritesCount = readUInt32(b);
-        seek(b, 8); // skip unknown
+        p += 4; // skip group id
+
+        const spritesCount = f.readUInt32LE(p);
+        p += 4;
+
+        p += 8; // skip 8 unknown bytes
+
         const names = [];
         for (let j = 0; j < spritesCount; j++) {
-            const name = read(b, 13);
-            names.push(clean(name.toString()));
+            const name = f.slice(p, p + 13).toString();
+            p += 13;
+            names.push(clean(name));
         }
         for (let j = 0; j < spritesCount; j++) {
             sprites.push({
                 name: names[j],
-                offset: readUInt32(b),
+                offset: f.readUInt32LE(p),
             });
+            p += 4;
         }
     }
     const usedNames = {};
@@ -134,14 +151,15 @@ const parseDef = (buffer, destinationDir, defName) => {
         if (usedNames[name]) {
             continue; // Assumption: a frame named exactly like a previous frame is identical and we can skip it.
         }
+
         usedNames[name] = true;
-        seek(b, offset, 0);
-        seek(b, 4); // skip size
-        const format = readUInt32(b);
-        const fullWidth = readUInt32(b);
-        const fullHeight = readUInt32(b);
-        let width = readUInt32(b);
-        let height = readUInt32(b);
+        p = offset;
+        p += 4; // skip size
+        const format = f.readUInt32LE(p);
+        const fullWidth = f.readUInt32LE(p + 4);
+        const fullHeight = f.readUInt32LE(p + 8);
+        let width = f.readUInt32LE(p + 12);
+        let height = f.readUInt32LE(p + 16);
         // The following 8 bytes are leftMargin and topMargin, but we're not using those.
 
         // fs.writeFileSync(path.join(DESTINATION_DIR, name), b.buffer.slice(offset, offset + size));
@@ -160,39 +178,43 @@ const parseDef = (buffer, destinationDir, defName) => {
         const rgba = new Uint8ClampedArray(width * height * 4);
         switch (format) {
             case 0: // pixel data is not compressed, copy data to surface
-                seek(b, offset + baseOffset, 0);
+                p = offset + baseOffset;
                 for (let i = 0; i < height; i++) {
                     for (let x = 0; x < width; x++) {
-                        const colorIndex = readUInt8(b);
-                        rgba[j++] = palette[colorIndex].red;
-                        rgba[j++] = palette[colorIndex].green;
-                        rgba[j++] = palette[colorIndex].blue;
+                        const colorIndex = f.readUInt8(p++);
+                        const {r,g,b} = palette[colorIndex];
+                        rgba[j++] = r;
+                        rgba[j++] = g;
+                        rgba[j++] = b;
                         rgba[j++] = 255;
                     }
                 }
                 break;
             case 1: // for each line we have offset of pixel data
                 for (let i = 0; i < height; i++) {
-                    seek(b, offset + baseOffset + 4 * i, 0);
-                    const lineOffset = readUInt32(b);
-                    seek(b, offset + baseOffset + lineOffset, 0);
+                    p = offset + baseOffset + 4 * i;
+                    const lineOffset = f.readUInt32LE(p);
+                    p = offset + baseOffset + lineOffset;
                     let totalRowLength = 0;
                     while (totalRowLength < width) {
-                        const code = readUInt8(b);
-                        const length = readUInt8(b) + 1;
+                        const code = f.readUInt8(p++);
+                        const length = f.readUInt8(p++) + 1;
                         if (code === 255) {// Raw data
-                            const sequence = read(b, length);
+                            const sequence = f.slice(p, p + length);
+                            p += length;
                             for (const colorIndex of sequence) {
-                                rgba[j++] = palette[colorIndex].red;
-                                rgba[j++] = palette[colorIndex].green;
-                                rgba[j++] = palette[colorIndex].blue;
+                                const {r, g, b} = palette[colorIndex];
+                                rgba[j++] = r;
+                                rgba[j++] = g;
+                                rgba[j++] = b;
                                 rgba[j++] = 255;
                             }
                         } else { // RLE
                             for (let i = 0; i < length; i++) {
-                                rgba[j++] = palette[code].red;
-                                rgba[j++] = palette[code].green;
-                                rgba[j++] = palette[code].blue;
+                                const {r, g, b} = palette[code];
+                                rgba[j++] = r;
+                                rgba[j++] = g;
+                                rgba[j++] = b;
                                 rgba[j++] = 255;
                             }
                         }
@@ -203,34 +225,34 @@ const parseDef = (buffer, destinationDir, defName) => {
             case 2:
             case 3:
                 if (format === 2) {
-                    seek(b, offset + baseOffset, 0);
-                    const currentOffset = baseOffset + readUInt16(b);
-                    seek(b, offset + currentOffset, 0);
+                    p = offset + baseOffset + f.readUInt16LE(offset + baseOffset);
                 }
                 for (let i = 0; i < height; i++) {
                     if (format === 3) {
-                        seek(b, offset + baseOffset + i * 2 * (width / 32), 0);
-                        const currentOffset = baseOffset + readUInt16(b);
-                        seek(b, offset + currentOffset, 0);
+                        p = offset + baseOffset + i * 2 * (width / 32);
+                        p = offset + baseOffset + f.readUInt16LE(p);
                     }
                     let totalRowLength = 0;
                     while (totalRowLength < width) {
-                        const segment = readUInt8(b);
+                        const segment = f.readUInt8(p++);
                         const code = Math.floor(segment / 32);
                         const length = (segment & 31) + 1;
                         if (code === 7) {// Raw data
-                            const sequence = read(b, length);
+                            const sequence = f.slice(p, p + length);
+                            p += length;
                             for (const colorIndex of sequence) {
-                                rgba[j++] = palette[colorIndex].red;
-                                rgba[j++] = palette[colorIndex].green;
-                                rgba[j++] = palette[colorIndex].blue;
+                                const {r, g, b} = palette[colorIndex];
+                                rgba[j++] = r;
+                                rgba[j++] = g;
+                                rgba[j++] = b;
                                 rgba[j++] = 255;
                             }
                         } else { // RLE
                             for (let i = 0; i < length; i++) {
-                                rgba[j++] = palette[code].red;
-                                rgba[j++] = palette[code].green;
-                                rgba[j++] = palette[code].blue;
+                                const {r, g, b} = palette[code];
+                                rgba[j++] = r;
+                                rgba[j++] = g;
+                                rgba[j++] = b;
                                 rgba[j++] = 255;
                             }
                         }
@@ -244,41 +266,6 @@ const parseDef = (buffer, destinationDir, defName) => {
         }
         keep(rgba, width, height, destinationDir, name, defName);
     }
-};
-
-/**
- *
- */
-const open = (filePath) => {
-    return {
-        d: fs.openSync(filePath, 'r'),
-        p: 0,
-    }
-};
-
-const seek = (file, pos, mode) => {
-    file.p = mode === 0 ? pos : (file.p + pos);
-};
-
-const read = (file, size) => {
-    const buffer = Buffer.alloc(size);
-    fs.readSync(file.d, buffer, 0, size, file.p);
-    file.p += size;
-    return buffer;
-};
-
-const readUInt = (file) => {
-    const buffer = read(file, 4);
-    return buffer.readInt32LE();
-};
-
-const readString = (file, size) => {
-    const buffer = read(file, size);
-    return buffer.toString('utf8');
-};
-
-const close = (file) => {
-    fs.closeSync(file.d);
 };
 
 const clean = (s) => {
@@ -329,7 +316,7 @@ const keep = (rgba, w, h, destinationDir, name, suffix) => {
     if (rgba) {
         // show(rgba, w, h);
         // console.log(path.join(destinationDir, name + '-' + suffix + '.png'));
-        // save(rgba, w, h, path.join(destinationDir, name + '-' + suffix + '.png'));
+        save(rgba, w, h, path.join(destinationDir, name + '-' + suffix + '.png'));
     }
 };
 
