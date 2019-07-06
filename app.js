@@ -1,23 +1,39 @@
 const fs = require('fs-extra');
+const buffer = require('buffer');
 const path = require('path');
 const zlib = require('zlib');
-const nativeImage = require('electron').nativeImage;
+const md5 = require('js-md5');
+const {nativeImage} = require('electron');
 const BufferUtils = require('./utils/BufferUtils');
-const rgbToHex = require('./utils/rgbToHex');
-const log = require('./utils/log');
+const rgbToDec = require('./utils/rgbToDec');
 
 const SOURCE_DIR = "D:\\H3\\HoMM 3 Complete\\Data";
 const DESTINATION_DIR = 'assets';
+const PALETTE = {
+    '0': true,
+    [rgbToDec(0, 255, 255)]: true,
+    [rgbToDec(255, 150, 255)]: true,
+    [rgbToDec(255, 100, 255)]: true,
+    [rgbToDec(255, 50, 255)]: true,
+    [rgbToDec(255, 0, 255)]: true,
+    [rgbToDec(255, 255, 0)]: true,
+    [rgbToDec(180, 0, 255)]: true,
+    [rgbToDec(0, 255, 0)]: true,
+    [rgbToDec(255, 128, 255)]: true,
+};
 
-const map = {};
+// const colorToAsset = Buffer.alloc(buffer.constants.MAX_LENGTH);
+const hashToBitmap = {};
+let useless = 0;
+const db = new Uint16Array(16777215);
 
 const run = () => {
-    fs.emptyDirSync(DESTINATION_DIR);
+    fs.emptyDirSync(DESTINATION_DIR); // also creates the dir it's missing
     const lods = fs.readdirSync(SOURCE_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');
 
     for (const lod of lods) {
         // if (lod !== 'H3ab_spr.lod') {
-        // if (lod !== 'H3sprite.lod') {
+        // if (lod !== 'H3bitmap.lod') {
         //     continue;
         // }
         const f = open(path.join(SOURCE_DIR, lod));
@@ -35,10 +51,9 @@ const run = () => {
             item.csize = readUInt(f);
             list.push(item);
         }
-        // list = [{begin: 1304183, name: "ARA_COBL.PCX", size: 3646}];
-        // list = [{name: "AR_BG.PCX", begin: 538025, size: 766158}];
-        console.log(lod);
+        // console.log(lod);
         for (const item of list) {
+            const name = item.name;
             // if (item.name !== "ADVDIG.DEF") {
             //     continue;
             // }
@@ -58,24 +73,37 @@ const run = () => {
                     const h = itemBuffer.readInt32LE(8);
                     let rgba;
                     if (size === w * h) {
-                        rgba = parsePcxWithPalette(itemBuffer, w, h);
+                        rgba = parsePcxWithPalette(itemBuffer, w, h, name, lod);
                     } else if (size === w * h * 3) {
                         const bgrBuffer = itemBuffer.slice(12);
                         rgba = convertBgrToRgba(bgrBuffer);
                     }
-                    // const destination = path.join(DESTINATION_DIR, item.name.replace(/PCX$/, 'PNG'));
-                    // save(rgba, w, h, destination);
-                    // show(rgba, w, h);
+                    keep(rgba, w, h, name, lod);
                 } else { // DEF
-                    // console.log(item.name);
-                    // fs.writeFileSync(path.join(DESTINATION_DIR, item.name), itemBuffer);
-                    parseDef(itemBuffer, item.name);
-                    return;
+                    parseDef(itemBuffer, name + '-' + lod);
                 }
             }
         }
         close(f);
     }
+
+    for (const hash in hashToBitmap) {
+        const {rgba} = hashToBitmap[hash];
+        const len = rgba.length;
+        for (let i = 0; i < len; i += 4) {
+            const n = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+            if (n === 65535) {
+            } else {
+
+                if (PALETTE[n]) {
+
+                } else {
+                    db[n]++;
+                }
+            }
+        }
+    }
+    logLengthsDb();
 };
 
 /**
@@ -85,16 +113,27 @@ const parsePcxWithPalette = (buffer, w, h) => {
     const len = w * h;
     const paletteOffset = 12 + len;
     const palette = [];
+    const uniqueColorsMap = {};
+    let uniqueColorsCount = 0;
+    let monoColorIndex;
     for (let i = 0; i < 256; i++) {
         const offset = paletteOffset + i * 3;
         const r = buffer.readUInt8(offset);
         const g = buffer.readUInt8(offset + 1);
         const b = buffer.readUInt8(offset + 2);
         palette[i] = {r, g, b};
+        const n = rgbToDec(r, g, b);
+        if (!PALETTE[n]) {
+            uniqueColorsCount++;
+            uniqueColorsMap[n] = true;
+            monoColorIndex = i;
+        }
     }
     const pixels = buffer.slice(12, paletteOffset);
     const rgba = new Uint8ClampedArray(w * h * 4);
     let j = 0;
+    let regularPixels = 0;
+    let isMono = uniqueColorsCount < 2;
     for (let i = 0; i < len; i++) {
         const colorIndex = pixels.readUInt8(i);
         const color = palette[colorIndex];
@@ -102,6 +141,14 @@ const parsePcxWithPalette = (buffer, w, h) => {
         rgba[j++] = color.g;
         rgba[j++] = color.b;
         rgba[j++] = 255;
+        if (isMono && monoColorIndex === colorIndex) {
+            regularPixels++;
+        }
+    }
+    // Refuse full masks. Victim: "TORDWFT.PCX" (needs 0.18)
+    if (uniqueColorsCount <= 1 && regularPixels / len > 0.15) {
+        useless++;
+        return null;
     }
     return rgba;
 };
@@ -140,10 +187,12 @@ const parseDef = (buffer, defName) => {
             });
         }
     }
+    const usedNames = {};
     for (const {name, offset} of sprites) {
-        // if (name !== 'TDTS000.PCX') {
-        //     continue;
-        // }
+        if (usedNames[name]) {
+            continue;
+        }
+        usedNames[name] = true;
         seek(b, offset, 0);
         const size = readUInt32(b);
         const format = readUInt32(b);
@@ -155,7 +204,7 @@ const parseDef = (buffer, defName) => {
         const topMargin = readUInt32(b);
 
         // fs.writeFileSync(path.join(DESTINATION_DIR, name), b.buffer.slice(offset, offset + size));
-        // console.log(JSON.stringify({name, offset, size, format, fullWidth, fullHeight, width, height, leftMargin, topMargin},null,4));
+        // console.log(JSON.stringify({name, offset, size, format, fullWidth, fullHeight, width, height},null,4));
 
         // special case for some "old" format defs (SGTWMTA.DEF and SGTWMTB.DEF)
         let tempOffset = 32;
@@ -252,9 +301,7 @@ const parseDef = (buffer, defName) => {
                 console.log('Unknown format!', format);
                 break;
         }
-        // show(rgba, width, height);
-        console.log(path.join(DESTINATION_DIR, name.replace(/PCX$/, 'PNG')));
-        save(rgba, width, height, path.join(DESTINATION_DIR, name.replace(/PCX$/, 'PNG')));
+        keep(rgba, width, height, name, defName);
     }
 };
 
@@ -336,6 +383,38 @@ const convertBgrToRgba = (rgbBuffer) => {
     }
     return rgba;
 };
+
+const keep = (rgba, w, h, name, suffix) => {
+    if (rgba) {
+        const hash = md5(rgba);
+        if (!hashToBitmap[hash]) {
+            hashToBitmap[hash] = {name, rgba, w, h, hash, suffix};
+            // show(rgba, w, h);
+            // save(rgba, w, h, path.join(DESTINATION_DIR, name + '-' + suffix + '.png'));
+        }
+    }
+};
+
+
+const logLengthsDb = () => {
+    const lengths = [];
+    const len = db.length;
+    let mostPopularColorOccurrences = 0;
+    let mostPopularColorCode = 0;
+    for (let color = 0; color < len; color++) {
+        const occurrences = db[color];
+        if (occurrences > mostPopularColorOccurrences) {
+            mostPopularColorOccurrences = occurrences;
+            mostPopularColorCode = color;
+        }
+        lengths[occurrences] = lengths[occurrences] || 0;
+        lengths[occurrences]++;
+    }
+    console.log('mostPopularColorCode', mostPopularColorCode);
+    console.log('mostPopularColorOccurrences', mostPopularColorOccurrences);
+    console.log('lengths', lengths);
+};
+
 
 console.time('run');
 run();

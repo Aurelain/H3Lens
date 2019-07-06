@@ -2,5 +2,7 @@
 assets
 *.exe
 *.dll
+*.bat
 node_modules
 package-lock.json
+assets
