@@ -1,7 +1,6 @@
 const rgbToDec = require('../utils/rgbToDec');
 
 module.exports = {
-    '0': true,
     [rgbToDec(0, 255, 255)]: true,
     [rgbToDec(255, 150, 255)]: true,
     [rgbToDec(255, 100, 255)]: true,

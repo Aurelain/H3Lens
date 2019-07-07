@@ -12,15 +12,13 @@ const zlib = require('zlib');
 const md5 = require('js-md5');
 const PALETTE = require('./PALETTE');
 
-
 /**
  *
  * @param lodPath
  * @param db
+ * @param hashes
  */
-const parseAssets = (lodPath, db) => {
-    const hashes = {};
-
+const parseAssets = (lodPath, db, hashes) => {
     const lodName = lodPath.match(/[^\/\\]+$/)[0];
     const f = fs.readFileSync(lodPath);
     const itemsCount = f.readUInt32LE(8);
@@ -52,6 +50,7 @@ const parseAssets = (lodPath, db) => {
         // if (name !== "ADVDIG.DEF") continue;
 
         if (name.match(/\.PCX$|\.DEF$/)) {
+            // if (name !== "HPL000KN.PCX") continue;
             let itemBuffer;
             if (csize) {
                 const zipBuffer = f.slice(begin, begin + csize);
@@ -72,7 +71,7 @@ const parseAssets = (lodPath, db) => {
                 }
                 keep(rgba, w, h, name, lodName, db, hashes);
             } else { // DEF
-                parseDef(itemBuffer, name, lodName, db, hashes);
+                parseDef(itemBuffer, lodName + '-' + name, db, hashes);
             }
             // return;
         }
@@ -86,12 +85,20 @@ const parsePcxWithPalette = (buffer, w, h) => {
     const len = w * h;
     const paletteOffset = 12 + len;
     const palette = [];
+    const uniqueColorsMap = {};
     for (let i = 0; i < 256; i++) {
         const offset = paletteOffset + i * 3;
         const r = buffer.readUInt8(offset);
         const g = buffer.readUInt8(offset + 1);
         const b = buffer.readUInt8(offset + 2);
         palette[i] = {r, g, b};
+        const n = rgbToDec(r, g, b);
+        if (n && !PALETTE[n]) {
+            uniqueColorsMap[n] = true;
+        }
+    }
+    if (Object.keys(uniqueColorsMap).length <= 1) {
+        return null; // Refuse mono-color bitmaps because they're usually too thin or useless
     }
     const pixels = buffer.slice(12, paletteOffset);
     const rgba = new Uint8ClampedArray(w * h * 4);
@@ -110,7 +117,7 @@ const parsePcxWithPalette = (buffer, w, h) => {
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
  */
-const parseDef = (f, destinationDir, defName, db, hashes) => {
+const parseDef = (f, defName, db, hashes) => {
     let p = 12; // skip type, width and height
 
     const groupsCount = f.readUInt32LE(p);
@@ -292,48 +299,17 @@ const convertBgrToRgba = (rgbBuffer) => {
 /**
  *
  */
-const show = (rgba, w, h) => {
-    const imageData = new ImageData(rgba, w, h);
-    const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'position:fixed;left:0;top:0;';
-    canvas.width = w;
-    canvas.height = h;
-    const context = canvas.getContext('2d');
-    context.putImageData(imageData, 0, 0);
-    setTimeout(function () {
-        document.body.appendChild(canvas);
-    }, 100)
-};
-
-/**
- *
- */
 const keep = (rgba, w, h, name, suffix, db, hashes) => {
     if (rgba) {
         const hash = md5(rgba);
         if (!hashes[hash]) {
             db.push({rgba, w, h, name, suffix, hash});
             hashes[hash] = true;
-            // show(grayscale(rgba, w, h), w, h);
+            // require('../utils/show')(rgba, w, h, 10);
             // console.log(path.join(destinationDir, name + '-' + suffix + '.png'));
         }
     }
 };
-/**
- * https://gist.github.com/johnnoel/b6c80ef49de4e2fbf4c616956a289e23
- */
-const grayscale = (rgba, w, h) => {
-    const pixelCount = w * h;
-    const converted = new Uint8ClampedArray(pixelCount * 4);
-    for (let i = 0; i < pixelCount; i++) {
-        const offset = i * 4;
-        const gray = Math.floor(rgba[offset] + rgba[offset + 1] + rgba[offset + 2]) / 3;
-        converted[offset] = gray;
-        converted[offset + 1] = gray;
-        converted[offset + 2] = gray;
-        converted[offset + 3] = rgba[offset + 3];
-    }
-    return converted;
-};
+
 
 module.exports = parseAssets;
