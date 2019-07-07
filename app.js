@@ -27,6 +27,7 @@ const runExtractAssets = () => {
 */
 
 const run = () => {
+    return;
     const db = [];
     const hashes = {};
     const lods = fs.readdirSync(SOURCE_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');
@@ -38,7 +39,7 @@ const run = () => {
         parseAssets(path.join(SOURCE_DIR, lod), db, hashes);
     }
 
-    markAssets(db);
+    // markAssets(db);
 
 };
 
