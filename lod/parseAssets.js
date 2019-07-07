@@ -1,23 +1,27 @@
 /*
-This is a fork of `parseAssets()`, intended for debugging and writing to disk of the assets.
-This library is unconcerned about optimization.
-It exports all assets, as opposed to `parseAssets()` that skips some masks and some colors.
+This is a fork of `extractAssets()`, intended to optimize the pixel analysis:
+    - ignores special colors
+    - does not produce valid rgba arrays
+    - hashes bitmaps to avoid dupes
+    - ignores solid mono-color bitmaps
+
 */
 
-const fs = require('fs-extra');
-const path = require('path');
+const fs = require('fs');
 const zlib = require('zlib');
-const {nativeImage} = require('electron');
+const md5 = require('js-md5');
+const PALETTE = require('./PALETTE');
+
 
 /**
  *
  * @param lodPath
- * @param destinationDir
+ * @param db
  */
-const extractAssets = (lodPath, destinationDir) => {
-    const lodName = lodPath.match(/[^\/\\]+$/)[0];
-    fs.ensureDirSync(destinationDir);
+const parseAssets = (lodPath, db) => {
+    const hashes = {};
 
+    const lodName = lodPath.match(/[^\/\\]+$/)[0];
     const f = fs.readFileSync(lodPath);
     const itemsCount = f.readUInt32LE(8);
     let p = 92; // the records always start at 0x5C
@@ -66,10 +70,11 @@ const extractAssets = (lodPath, destinationDir) => {
                     const bgrBuffer = itemBuffer.slice(12);
                     rgba = convertBgrToRgba(bgrBuffer);
                 }
-                keep(rgba, w, h, destinationDir, name, lodName);
+                keep(rgba, w, h, name, lodName, db, hashes);
             } else { // DEF
-                parseDef(itemBuffer, destinationDir, name + '-' + lodName);
+                parseDef(itemBuffer, name, lodName, db, hashes);
             }
+            // return;
         }
     }
 };
@@ -105,7 +110,7 @@ const parsePcxWithPalette = (buffer, w, h) => {
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
  */
-const parseDef = (f, destinationDir, defName) => {
+const parseDef = (f, destinationDir, defName, db, hashes) => {
     let p = 12; // skip type, width and height
 
     const groupsCount = f.readUInt32LE(p);
@@ -262,39 +267,13 @@ const parseDef = (f, destinationDir, defName) => {
                 console.log('Unknown format!', format);
                 break;
         }
-        keep(rgba, width, height, destinationDir, name, defName);
+        keep(rgba, width, height, name, defName, db, hashes);
+        // return;
     }
 };
 
 const clean = (s) => {
     return s.replace(/[^a-zA-Z0-9_.][\s\S]*/g, '').toUpperCase();
-};
-
-const show = (rgba, w, h) => {
-    const imageData = new ImageData(rgba, w, h);
-    const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'position:fixed;left:0;top:0;';
-    canvas.width = w;
-    canvas.height = h;
-    const context = canvas.getContext('2d');
-    context.putImageData(imageData, 0, 0);
-    setTimeout(function () {
-        document.body.appendChild(canvas);
-    }, 100)
-};
-
-const save = (rgba, w, h, destination) => {
-    const len = rgba.length;
-    const bgra = new Uint8ClampedArray(len);
-    let j = 0;
-    for (let i = 0; i < len; i += 4) {
-        bgra[j++] = rgba[i + 2];
-        bgra[j++] = rgba[i + 1];
-        bgra[j++] = rgba[i];
-        bgra[j++] = rgba[i + 3];
-    }
-    const pngBuffer = nativeImage.createFromBuffer(bgra, {width: w, height: h}).toPNG();
-    fs.writeFileSync(destination, pngBuffer);
 };
 
 const convertBgrToRgba = (rgbBuffer) => {
@@ -310,12 +289,51 @@ const convertBgrToRgba = (rgbBuffer) => {
     return rgba;
 };
 
-const keep = (rgba, w, h, destinationDir, name, suffix) => {
-    if (rgba) {
-        // show(rgba, w, h);
-        // console.log(path.join(destinationDir, name + '-' + suffix + '.png'));
-        save(rgba, w, h, path.join(destinationDir, name + '-' + suffix + '.png'));
-    }
+/**
+ *
+ */
+const show = (rgba, w, h) => {
+    const imageData = new ImageData(rgba, w, h);
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;left:0;top:0;';
+    canvas.width = w;
+    canvas.height = h;
+    const context = canvas.getContext('2d');
+    context.putImageData(imageData, 0, 0);
+    setTimeout(function () {
+        document.body.appendChild(canvas);
+    }, 100)
 };
 
-module.exports = extractAssets;
+/**
+ *
+ */
+const keep = (rgba, w, h, name, suffix, db, hashes) => {
+    if (rgba) {
+        const hash = md5(rgba);
+        if (!hashes[hash]) {
+            db.push({rgba, w, h, name, suffix, hash});
+            hashes[hash] = true;
+            // show(grayscale(rgba, w, h), w, h);
+            // console.log(path.join(destinationDir, name + '-' + suffix + '.png'));
+        }
+    }
+};
+/**
+ * https://gist.github.com/johnnoel/b6c80ef49de4e2fbf4c616956a289e23
+ */
+const grayscale = (rgba, w, h) => {
+    const pixelCount = w * h;
+    const converted = new Uint8ClampedArray(pixelCount * 4);
+    for (let i = 0; i < pixelCount; i++) {
+        const offset = i * 4;
+        const gray = Math.floor(rgba[offset] + rgba[offset + 1] + rgba[offset + 2]) / 3;
+        converted[offset] = gray;
+        converted[offset + 1] = gray;
+        converted[offset + 2] = gray;
+        converted[offset + 3] = rgba[offset + 3];
+    }
+    return converted;
+};
+
+module.exports = parseAssets;

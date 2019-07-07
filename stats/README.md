@@ -22,4 +22,4 @@
 
 
 ##H3 HD Edition (Restoration of Erathia)
-- archives (PAK): 4
+- archives (PAK): 2
