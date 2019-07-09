@@ -50,3 +50,17 @@ console.log(getForegroundWindowText());
 
 
 */
+
+const { spawn } = require('child_process');
+const test = spawn('client/companion.exe', ['hello']);
+test.stdout.on('data', (data) => {
+    console.log(`stdout: ${data}`);
+});
+
+test.stderr.on('data', (data) => {
+    console.log(`stderr: ${data}`);
+});
+
+test.on('close', (code) => {
+    console.log(`child process exited with code ${code}`);
+});

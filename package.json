@@ -4,7 +4,17 @@
     "description": "",
     "main": "main.js",
     "scripts": {
-        "start": "electron ."
+        "postinstall": "install-app-deps",
+        "start": "electron .",
+        "pack": "build --dir",
+        "dist": "build"
+    },
+    "build": {
+        "win": {
+            "target": "zip",
+            "icon": "build/icon.ico"
+        },
+        "extraFiles": ["client/companion.exe"]
     },
     "keywords": [
         "Heroes 3"
@@ -16,7 +26,8 @@
         "url": "git+https://github.com/Aurelain/H3Lens.git"
     },
     "devDependencies": {
-        "electron": "^5.0.6"
+        "electron": "^5.0.6",
+        "electron-builder": "^20.44.4"
     },
     "dependencies": {
         "fs-extra": "^8.1.0",
