@@ -14,7 +14,9 @@
             "target": "zip",
             "icon": "build/icon.ico"
         },
-        "extraFiles": ["client/companion.exe"]
+        "extraFiles": [
+            "client/companion.exe"
+        ]
     },
     "keywords": [
         "Heroes 3"
@@ -31,6 +33,7 @@
     },
     "dependencies": {
         "fs-extra": "^8.1.0",
-        "js-md5": "^0.7.3"
+        "js-md5": "^0.7.3",
+        "winreg": "^1.2.4"
     }
 }
