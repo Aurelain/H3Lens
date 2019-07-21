@@ -40,7 +40,7 @@ const addMarkers = (rgba,  w, h, imageIndex) => {
                         for (let xs = x; xs < x + MARKER_SIZE; xs++) {
                             const j = ys * w * 4 + xs * 4;
                             const n = rgbToDec(rgba[j], rgba[j + 1], rgba[j + 2]);
-                            if (PALETTE[n]) {
+                            if (PALETTE[n] || used[j]) {
                                 isValid = false;
                                 break;
                             }

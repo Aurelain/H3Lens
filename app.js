@@ -4,12 +4,14 @@ const path = require('path');
 const extractAssets = require('./lod/extractAssets');
 const parseAssets = require('./lod/parseAssets');
 const markAssets = require('./lod/markAssets');
+const injectAssets = require('./lod/injectAssets');
 const PALETTE = require('./lod/PALETTE');
 const rgbToDec = require('./utils/rgbToDec');
 const show = require('./utils/show');
 
 const SOURCE_DIR = "D:\\H3_ALL_Freeze\\HoMM 3 Complete\\Data";
 const DESTINATION_DIR = 'assets';
+const GAME_DATA_DIR = "D:\\H3\\HoMM 3 Complete\\Data";
 
 
 
@@ -27,19 +29,27 @@ const runExtractAssets = () => {
 */
 
 const run = () => {
-    return;
     const db = [];
     const hashes = {};
     const lods = fs.readdirSync(SOURCE_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');
     for (const lod of lods) {
-        // if (lod !== 'H3ab_bmp.lod') continue;
-        // if (lod !== 'H3bitmap.lod') continue;
-        // if (lod !== 'H3ab_spr.lod') continue;
-        // if (lod !== 'H3sprite.lod') continue;
         parseAssets(path.join(SOURCE_DIR, lod), db, hashes);
     }
 
-    // markAssets(db);
+    console.log(hashes);
+    console.log(db);
+    markAssets(db);
+
+    for (const {rgba, w, h} of db) {
+        show(rgba, w, h, 1);
+    }
+
+    const gameLods = fs.readdirSync(GAME_DATA_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');
+    for (const lod of gameLods) {
+        injectAssets(path.join(GAME_DATA_DIR, lod), db);
+        // break;
+    }
+
 
 };
 

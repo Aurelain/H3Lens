@@ -1,39 +1,77 @@
-﻿#NoEnv  ; Recommended for performance and compatibility with future AutoHotkey releases.
-#Warn  ; Enable warnings to assist with detecting common errors.
-SendMode Input  ; Recommended for new scripts due to its superior speed and reliability.
-SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
+﻿#NoEnv
+SendMode Input
+SetWorkingDir %A_ScriptDir%
 #SingleInstance, Force
 
 
-MsgBox Started
-for n, param in A_Args  ; For each parameter:
-{
-    MsgBox Parameter number %n% is %param%.
-}
-ExitApp
-;A_Args[1] := "notepad.exe"
+; constants
+H3_WINDOW_NAME := "Heroes of Might and Magic III"
+H3_DEFAULT_DIR := "D:\H3\HoMM 3 Complete"
+H3_LAUNCHER := "HD_Launcher.exe"
+H3_LAUNCHER_WINDOW := "HoMM3 HD"
 
-return
+
+; register cleanup handler
 OnExit("onAppExit")
-Run, notepad.exe
 
+
+; read entry parameter
+h3Dir := A_Args[1]
+if (!h3Dir) {
+	h3Dir := H3_DEFAULT_DIR
+}
+if (!FileExist(h3Dir)) {
+	die("Cannot find folder: " . h3Dir)
+}
+	
+
+; start launcher
+SetWorkingDir %h3Dir%
+h3Launcher := h3Dir . "\" . H3_LAUNCHER
+if (!FileExist(h3Launcher)) {
+	die("Cannot find exe: " . h3Launcher)
+}
+Run, %h3Launcher%
+
+
+; press enter to start H3
+WinWaitActive, %H3_LAUNCHER_WINDOW%,,1
+if (!WinActive(H3_LAUNCHER_WINDOW)) {
+	die("Cannot find window: " . H3_LAUNCHER_WINDOW)
+}
+Send, {ENTER}
+WinKill, %H3_LAUNCHER_WINDOW%
+
+
+; guardian loop
+isActive := 0
+SetTimer, UpdateTooltip, 200
 Loop {
-	WinWaitActive, Untitled,,1
-	if (WinActive("Untitled")) {
+	WinWaitActive, %H3_WINDOW_NAME%,,1
+	if (WinActive(H3_WINDOW_NAME)) {
 		WinGetPos, X, Y, W, H, A
-		confineCursor(X,Y+40,X+W-10,Y+H-10)		
+		confineCursor(X + 10, Y + 60, X + W - 20, Y + H - 80)	
+		isActive := 1
+		WinWaitNotActive
 	}
-	WinWaitNotActive
-	;ClipCursor(false)
-	if (!WinExist("Untitled")) {
+	isActive := 0
+	if (!WinExist(H3_WINDOW_NAME)) {
 		ExitApp
 	}
-	WinMinimize
 }
+
+ExitApp
 
 
 ESC::
 ExitApp
+
+
+
+UpdateTooltip:
+ToolTip, %isActive%, 0, 0
+return
+
 
 confineCursor(x1=0 , y1=0, x2=1, y2=1 ) {
   VarSetCapacity(R,16,0)
@@ -50,4 +88,9 @@ freeCursor() {
 
 onAppExit() {
 	freeCursor()
+}
+
+die(message) {
+	MsgBox % message
+	ExitApp
 }

@@ -1,7 +1,9 @@
 // const fs = require('fs');
 // const content = fs.readFileSync('hello.txt');
+const {spawn} = require('child_process');
 const {desktopCapturer} = require('electron');
-console.log(process.versions.chrome);
+
+//console.log(process.versions.chrome);
 
 // const ffi = require("ffi");
 //const ref = require("ref");
@@ -50,45 +52,15 @@ console.log(getForegroundWindowText());
 
 
 */
-/*
-const { spawn } = require('child_process');
-const test = spawn('client/companion.exe', ['hello']);
-test.stdout.on('data', (data) => {
-    console.log(`stdout: ${data}`);
-});
 
-test.stderr.on('data', (data) => {
-    console.log(`stderr: ${data}`);
-});
-
-test.on('close', (code) => {
-    console.log(`child process exited with code ${code}`);
-});
-*/
-/*
-const winreg = require('winreg');
-const regKey = winreg({
-    hive: winreg.HKCU,
-    key:  '\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-});
-
-
-// list autostart programs
-regKey.values(function (err, items) {
-    if (err)
-        console.log('ERROR: '+err);
-    else
-        for (var i=0; i<items.length; i++)
-            console.log('ITEM: '+items[i].name+'\t'+items[i].type+'\t'+items[i].value);
-});
-*/
 const findH3Dir = require('./utils/findH3Dir');
 const findH3HdDir = require('./utils/findH3HdDir');
 (async () => {
 
+    const h3Dir = await findH3Dir();
+    const companion = spawn('client/companion.exe', [h3Dir]);
 
-    console.log(await findH3Dir());
-    console.log(await findH3HdDir());
+    // console.log(await findH3HdDir());
 
 
 })();

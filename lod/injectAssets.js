@@ -1,24 +1,16 @@
-/*
-This is a fork of `extractAssets()`, intended to optimize the pixel analysis:
-    - ignores special colors
-    - does not produce valid rgba arrays
-    - hashes bitmaps to avoid dupes
-    - ignores solid mono-color bitmaps
-
-*/
-
 const fs = require('fs');
 const zlib = require('zlib');
-const md5 = require('js-md5');
 const PALETTE = require('./PALETTE');
+const memoize = require('memoize-one');
 
 /**
  *
  * @param lodPath
  * @param db
- * @param hashes
  */
-const parseAssets = (lodPath, db, hashes) => {
+const injectAssets = (lodPath, db) => {
+    const assetPaths = memoPaths(db);
+
     const lodName = lodPath.match(/[^\/\\]+$/)[0];
     const f = fs.readFileSync(lodPath);
     const itemsCount = f.readUInt32LE(8);
@@ -46,41 +38,122 @@ const parseAssets = (lodPath, db, hashes) => {
 
         list.push(item);
     }
-    for (const {assetName, begin, csize, usize} of list) {
-        if (assetName !== "GAMSELBK.PCX") continue;
-        // if (assetName !== "MMENUHS.DEF") continue;
-        // if (assetName !== "AH06_E.DEF") continue;
-        // if (assetName !== "COHDEM45.PCX") continue;
-        // if (assetName !== "HPS001PL.PCX") continue; // with palette
-        // if (assetName !== "AR_BG.PCX") continue; // no palette
-
-        if (assetName.match(/\.PCX$|\.DEF$/)) {
-            let itemBuffer;
-            if (csize) {
-                const zipBuffer = f.slice(begin, begin + csize);
-                itemBuffer = zlib.unzipSync(zipBuffer);
-            } else {
-                itemBuffer = f.slice(begin, begin + usize);
-            }
+    let deltaSize = 0;
+    let hasChanged = true;
+    for (const item of list) {
+        const {assetName, begin, csize, usize} = item;
+        const size = csize || usize;
+        const assetPath = lodName + '/' + assetName;
+        if (assetPath in assetPaths) {
+            const dbItem = assetPaths[assetPath][0];
+            hasChanged = true;
             if (assetName.match(/PCX$/)) {
-                const size = itemBuffer.readUInt32LE(0);
-                const w = itemBuffer.readUInt32LE(4);
-                const h = itemBuffer.readUInt32LE(8);
-                const hasPalette = Boolean(size === w * h);
-                let rgba;
-                if (hasPalette) {
-                    rgba = parsePcxWithPalette(itemBuffer, w, h);
-                } else if (size === w * h * 3) {
-                    const bgrBuffer = itemBuffer.slice(12);
-                    rgba = convertBgrToRgba(bgrBuffer);
+                if (dbItem.frameName) {
+                    item.buffer = createBitmapWithPalette(dbItem);
+                } else {
+                    item.buffer = createSimpleBitmap(dbItem);
                 }
-                keep(rgba, w, h, lodName, assetName, hasPalette, db, hashes);
-            } else { // DEF
-                parseDef(itemBuffer, lodName, assetName, db, hashes);
+            } else {
+                item.buffer = f.slice(begin, begin + size);
+                if (csize) {
+                    item.buffer = zlib.unzipSync(item.buffer);
+                }
+                item.buffer = createDef(item, dbItem);
             }
-            // return;
+            item.usize = item.buffer.length;
+            item.csize = 0;
+            deltaSize += item.usize - size;
+        } else {
+            item.buffer = f.slice(begin, begin + size)
         }
     }
+    if (hasChanged) {
+        const o = Buffer.alloc(f.length + deltaSize);
+        let cursor = 92 + itemsCount * 32;
+        o.fill(f, 0, cursor);
+        p = 92;
+        for (let i = 0; i < itemsCount; i++) {
+            const item = list[i];
+            p += 12; // skip name
+            p += 4; // skip 4 unknown bytes
+
+            item.begin = cursor;
+            o.writeUInt32LE(item.begin, p);
+            p += 4;
+            cursor += item.buffer.length;
+
+            o.writeUInt32LE(item.usize, p);
+            p += 4;
+
+            p += 4; // skip 4 unknown bytes
+
+            o.writeUInt32LE(item.csize, p);
+            p += 4;
+        }
+        for (let i = 0; i < itemsCount; i++) {
+            const {buffer, begin, usize, csize} = list[i];
+            const size = csize || usize;
+            o.fill(buffer, begin, begin+size);
+        }
+        // for (let i = 0; i < f.length; i++) {
+        //     if (o[i] !== f[i]) {
+        //         console.log('diff!', i, o[i], f[i]);
+        //         return;
+        //     }
+        // }
+        fs.writeFileSync(lodPath, o);
+    }
+};
+
+/**
+ *
+ */
+const memoPaths = memoize(db => {
+    const paths = {};
+    for (const item of db) {
+        const path = item.lodName + '/' + item.assetName;
+        if (!paths[path]) {
+            paths[path] = [];
+        }
+        paths[path].push(item);
+    }
+    return paths;
+});
+
+/**
+ *
+ */
+const createBitmapWithPalette = () => {
+
+};
+
+/**
+ *
+ */
+const createSimpleBitmap = ({rgba, w, h}) => {
+    const size = w * h * 3;
+    const buffer = Buffer.allocUnsafe(12 + size);
+    buffer.writeUInt32LE(size);
+    buffer.writeUInt32LE(w, 4);
+    buffer.writeUInt32LE(h, 8);
+    let p = 12;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = y * w * 4 + x * 4;
+            buffer.writeUInt8(rgba[i + 2], p);
+            buffer.writeUInt8(rgba[i + 1], p + 1);
+            buffer.writeUInt8(rgba[i], p + 2);
+            p += 3;
+        }
+    }
+    return buffer;
+};
+
+/**
+ *
+ */
+const createDef = () => {
+
 };
 
 /**
@@ -122,7 +195,7 @@ const parsePcxWithPalette = (buffer, w, h) => {
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
  */
-const parseDef = (f, lodName, assetName, db, hashes) => {
+const parseDef = (f, defName, db, hashes) => {
     let p = 12; // skip type, width and height
 
     const groupsCount = f.readUInt32LE(p);
@@ -155,19 +228,19 @@ const parseDef = (f, lodName, assetName, db, hashes) => {
         }
         for (let j = 0; j < spritesCount; j++) {
             sprites.push({
-                frameName: names[j],
+                name: names[j],
                 offset: f.readUInt32LE(p),
             });
             p += 4;
         }
     }
     const usedNames = {};
-    for (const {frameName, offset} of sprites) {
-        if (usedNames[frameName]) {
+    for (const {name, offset} of sprites) {
+        if (usedNames[name]) {
             continue; // Assumption: a frame named exactly like a previous frame is identical and we can skip it.
         }
 
-        usedNames[frameName] = true;
+        usedNames[name] = true;
         p = offset;
         p += 4; // skip size
         const format = f.readUInt32LE(p);
@@ -197,7 +270,7 @@ const parseDef = (f, lodName, assetName, db, hashes) => {
                 for (let i = 0; i < height; i++) {
                     for (let x = 0; x < width; x++) {
                         const colorIndex = f.readUInt8(p++);
-                        const {r,g,b} = palette[colorIndex];
+                        const {r, g, b} = palette[colorIndex];
                         rgba[j++] = r;
                         rgba[j++] = g;
                         rgba[j++] = b;
@@ -279,7 +352,7 @@ const parseDef = (f, lodName, assetName, db, hashes) => {
                 console.log('Unknown format!', format);
                 break;
         }
-        keep(rgba, width, height, lodName, assetName, frameName, db, hashes);
+        keep(rgba, width, height, name, defName, db, hashes);
         // return;
     }
 };
@@ -304,12 +377,11 @@ const convertBgrToRgba = (rgbBuffer) => {
 /**
  *
  */
-const keep = (rgba, w, h, lodName, assetName, frameName, db, hashes) => {
+const keep = (rgba, w, h, name, suffix, db, hashes) => {
     if (rgba) {
         const hash = md5(rgba);
-        // console.log(`${lodName}/${assetName}/${frameName}`);
         if (!hashes[hash]) {
-            db.push({rgba, w, h, lodName, assetName, frameName, hash});
+            db.push({rgba, w, h, name, suffix, hash});
             hashes[hash] = true;
             // require('../utils/show')(rgba, w, h, 10);
             // console.log(path.join(destinationDir, name + '-' + suffix + '.png'));
@@ -318,4 +390,4 @@ const keep = (rgba, w, h, lodName, assetName, frameName, db, hashes) => {
 };
 
 
-module.exports = parseAssets;
+module.exports = injectAssets;
