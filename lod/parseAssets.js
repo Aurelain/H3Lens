@@ -17,8 +17,9 @@ const PALETTE = require('./PALETTE');
  * @param lodPath
  * @param db
  * @param hashes
+ * @param assetPaths
  */
-const parseAssets = (lodPath, db, hashes) => {
+const parseAssets = (lodPath, db, hashes, assetPaths) => {
     const lodName = lodPath.match(/[^\/\\]+$/)[0];
     const f = fs.readFileSync(lodPath);
     const itemsCount = f.readUInt32LE(8);
@@ -47,12 +48,12 @@ const parseAssets = (lodPath, db, hashes) => {
         list.push(item);
     }
     for (const {assetName, begin, csize, usize} of list) {
-        if (assetName !== "GAMSELBK.PCX") continue;
+        // if (assetName !== "GAMSELBK.PCX") continue; // main menu background bitmap, no palette
+        if (assetName !== "HPL000KN.PCX") continue; // orrin portrait bitmap, with palette
         // if (assetName !== "MMENUHS.DEF") continue;
         // if (assetName !== "AH06_E.DEF") continue;
         // if (assetName !== "COHDEM45.PCX") continue;
         // if (assetName !== "HPS001PL.PCX") continue; // with palette
-        // if (assetName !== "AR_BG.PCX") continue; // no palette
 
         if (assetName.match(/\.PCX$|\.DEF$/)) {
             let itemBuffer;
@@ -74,9 +75,9 @@ const parseAssets = (lodPath, db, hashes) => {
                     const bgrBuffer = itemBuffer.slice(12);
                     rgba = convertBgrToRgba(bgrBuffer);
                 }
-                keep(rgba, w, h, lodName, assetName, hasPalette, db, hashes);
+                keep(rgba, w, h, lodName, assetName, hasPalette, db, hashes, assetPaths);
             } else { // DEF
-                parseDef(itemBuffer, lodName, assetName, db, hashes);
+                parseDef(itemBuffer, lodName, assetName, db, hashes, assetPaths);
             }
             // return;
         }
@@ -122,7 +123,7 @@ const parsePcxWithPalette = (buffer, w, h) => {
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
  */
-const parseDef = (f, lodName, assetName, db, hashes) => {
+const parseDef = (f, lodName, assetName, db, hashes, assetPaths) => {
     let p = 12; // skip type, width and height
 
     const groupsCount = f.readUInt32LE(p);
@@ -279,7 +280,7 @@ const parseDef = (f, lodName, assetName, db, hashes) => {
                 console.log('Unknown format!', format);
                 break;
         }
-        keep(rgba, width, height, lodName, assetName, frameName, db, hashes);
+        keep(rgba, width, height, lodName, assetName, frameName, db, hashes, assetPaths);
         // return;
     }
 };
@@ -304,16 +305,22 @@ const convertBgrToRgba = (rgbBuffer) => {
 /**
  *
  */
-const keep = (rgba, w, h, lodName, assetName, frameName, db, hashes) => {
+const keep = (rgba, w, h, lodName, assetName, frameName, db, hashes, assetPaths) => {
     if (rgba) {
         const hash = md5(rgba);
-        // console.log(`${lodName}/${assetName}/${frameName}`);
-        if (!hashes[hash]) {
+        let index;
+        if (hash in hashes) {
+            index = hashes[hash];
+        } else {
             db.push({rgba, w, h, lodName, assetName, frameName, hash});
-            hashes[hash] = true;
-            // require('../utils/show')(rgba, w, h, 10);
-            // console.log(path.join(destinationDir, name + '-' + suffix + '.png'));
+            index = db.length - 1;
+            hashes[hash] = index;
         }
+        const assetPath = lodName + '/' + assetName;
+        if (!assetPaths[assetPath]) {
+            assetPaths[assetPath] = [];
+        }
+        assetPaths[assetPath].push(index);
     }
 };
 

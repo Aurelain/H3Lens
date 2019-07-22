@@ -1,16 +1,17 @@
 const fs = require('fs');
 const zlib = require('zlib');
-const PALETTE = require('./PALETTE');
 const memoize = require('memoize-one');
+const rgbToDec = require('../utils/rgbToDec');
+
+
 
 /**
  *
  * @param lodPath
  * @param db
+ * @param assetPaths
  */
-const injectAssets = (lodPath, db) => {
-    const assetPaths = memoPaths(db);
-
+const injectAssets = (lodPath, db, assetPaths) => {
     const lodName = lodPath.match(/[^\/\\]+$/)[0];
     const f = fs.readFileSync(lodPath);
     const itemsCount = f.readUInt32LE(8);
@@ -39,15 +40,16 @@ const injectAssets = (lodPath, db) => {
         list.push(item);
     }
     let deltaSize = 0;
-    let hasChanged = true;
+    let hasChanged = false;
     for (const item of list) {
         const {assetName, begin, csize, usize} = item;
         const size = csize || usize;
         const assetPath = lodName + '/' + assetName;
         if (assetPath in assetPaths) {
-            const dbItem = assetPaths[assetPath][0];
+            const indexes = assetPaths[assetPath];
             hasChanged = true;
             if (assetName.match(/PCX$/)) {
+                const dbItem = db[indexes[0]]; // the only available index is 0
                 if (dbItem.frameName) {
                     item.buffer = createBitmapWithPalette(dbItem);
                 } else {
@@ -93,14 +95,9 @@ const injectAssets = (lodPath, db) => {
         for (let i = 0; i < itemsCount; i++) {
             const {buffer, begin, usize, csize} = list[i];
             const size = csize || usize;
-            o.fill(buffer, begin, begin+size);
+            o.fill(buffer, begin, begin + size);
         }
-        // for (let i = 0; i < f.length; i++) {
-        //     if (o[i] !== f[i]) {
-        //         console.log('diff!', i, o[i], f[i]);
-        //         return;
-        //     }
-        // }
+        console.log(lodPath);
         fs.writeFileSync(lodPath, o);
     }
 };
@@ -123,8 +120,26 @@ const memoPaths = memoize(db => {
 /**
  *
  */
-const createBitmapWithPalette = () => {
-
+const createBitmapWithPalette = ({rgba, w, h}) => {
+    const size = w * h;
+    const buffer = Buffer.allocUnsafe(12 + size + 256 * 3);
+    buffer.writeUInt32LE(size);
+    buffer.writeUInt32LE(w, 4);
+    buffer.writeUInt32LE(h, 8);
+    let p = 12;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = y * w * 4 + x * 4;
+            const dec = rgbToDec(rgba[i + 2], rgba[i + 1], rgba[i]);
+            buffer.writeUInt8(mapColorToIndex[dec], p);
+            p++;
+        }
+    }
+    for (const paletteCell of palette) {
+        buffer.writeUInt8(paletteCell, p);
+        p++;
+    }
+    return buffer;
 };
 
 /**
@@ -156,41 +171,6 @@ const createDef = () => {
 
 };
 
-/**
- *
- */
-const parsePcxWithPalette = (buffer, w, h) => {
-    const len = w * h;
-    const paletteOffset = 12 + len;
-    const palette = [];
-    const uniqueColorsMap = {};
-    for (let i = 0; i < 256; i++) {
-        const offset = paletteOffset + i * 3;
-        const r = buffer.readUInt8(offset);
-        const g = buffer.readUInt8(offset + 1);
-        const b = buffer.readUInt8(offset + 2);
-        palette[i] = {r, g, b};
-        const n = rgbToDec(r, g, b);
-        if (n && !PALETTE[n]) {
-            uniqueColorsMap[n] = true;
-        }
-    }
-    if (Object.keys(uniqueColorsMap).length <= 1) {
-        return null; // Refuse mono-color bitmaps because they're usually too thin or useless
-    }
-    const pixels = buffer.slice(12, paletteOffset);
-    const rgba = new Uint8ClampedArray(w * h * 4);
-    let j = 0;
-    for (let i = 0; i < len; i++) {
-        const colorIndex = pixels.readUInt8(i);
-        const color = palette[colorIndex];
-        rgba[j++] = color.r;
-        rgba[j++] = color.g;
-        rgba[j++] = color.b;
-        rgba[j++] = 255;
-    }
-    return rgba;
-};
 
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
@@ -388,6 +368,51 @@ const keep = (rgba, w, h, name, suffix, db, hashes) => {
         }
     }
 };
+/**
+ *
+ */
+const buildCustomPalette = () => {
+    const palette = new Uint8ClampedArray(256 * 3);
+    const colors = [
+        0, 255, 255,
+        255, 150, 255,
+        255, 100, 255,
+        255, 50, 255,
+        255, 0, 255,
+        255, 255, 0,
+        180, 0, 255,
+        0, 255, 0,
+        255, 128, 255,
+        0, 0, 0,
+        0x10, 0x10, 0x10,
+        0x20, 0x20, 0x20,
+        0x30, 0x30, 0x30,
+        0x40, 0x40, 0x40,
+        0x50, 0x50, 0x50,
+        0x60, 0x60, 0x60,
+        0x70, 0x70, 0x70,
+        0x80, 0x80, 0x80,
+        0x90, 0x90, 0x90,
+        0xa0, 0xa0, 0xa0,
+        0xb0, 0xb0, 0xb0,
+        0xc0, 0xc0, 0xc0,
+        0xd0, 0xd0, 0xd0,
+        0xe0, 0xe0, 0xe0,
+        0xf0, 0xf0, 0xf0,
+        0xff, 0xff, 0xff,
+    ];
+    for (let i = 0; i < colors.length; i++) {
+        palette[i] = colors[i];
+    }
+    const mapColorToIndex = {};
+    let index = 0;
+    for (let i = 0; i < colors.length; i+=3) {
+        mapColorToIndex[rgbToDec(colors[i+2], colors[i+1], colors[i])] = index++;
+    }
+    return {palette, mapColorToIndex};
+};
 
+
+const {palette, mapColorToIndex} = buildCustomPalette();
 
 module.exports = injectAssets;

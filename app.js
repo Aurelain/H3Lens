@@ -31,23 +31,24 @@ const runExtractAssets = () => {
 const run = () => {
     const db = [];
     const hashes = {};
+    const assetPaths = {};
     const lods = fs.readdirSync(SOURCE_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');
     for (const lod of lods) {
-        parseAssets(path.join(SOURCE_DIR, lod), db, hashes);
+        parseAssets(path.join(SOURCE_DIR, lod), db, hashes, assetPaths);
     }
 
-    console.log(hashes);
     console.log(db);
+    console.log(hashes);
+    console.log(assetPaths);
     markAssets(db);
 
     for (const {rgba, w, h} of db) {
-        show(rgba, w, h, 1);
+        show(rgba, w, h, 5);
     }
 
     const gameLods = fs.readdirSync(GAME_DATA_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');
     for (const lod of gameLods) {
-        injectAssets(path.join(GAME_DATA_DIR, lod), db);
-        // break;
+        injectAssets(path.join(GAME_DATA_DIR, lod), db, assetPaths);
     }
 
 

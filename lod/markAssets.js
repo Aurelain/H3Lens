@@ -92,8 +92,8 @@ const addMarker = (rgba, x, y, w, i, imageIndex, used) => {
             const j = ys * w * 4 + xs * 4;
             if (p > 12) {
                 rgba[j] = 0;
-                rgba[j + 1] = 255;
-                rgba[j + 2] = 255;
+                rgba[j + 1] = 0;
+                rgba[j + 2] = 0;
             } else {
                 const code = payload[p++];
                 rgba[j] = code;
