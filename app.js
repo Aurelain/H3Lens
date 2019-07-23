@@ -40,10 +40,10 @@ const run = () => {
     console.log(db);
     console.log(hashes);
     console.log(assetPaths);
-    markAssets(db);
+    // markAssets(db);
 
     for (const {rgba, w, h} of db) {
-        show(rgba, w, h, 5);
+        // show(rgba, w, h, 1);
     }
 
     const gameLods = fs.readdirSync(GAME_DATA_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');

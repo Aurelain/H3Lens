@@ -49,8 +49,9 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
     }
     for (const {assetName, begin, csize, usize} of list) {
         // if (assetName !== "GAMSELBK.PCX") continue; // main menu background bitmap, no palette
-        if (assetName !== "HPL000KN.PCX") continue; // orrin portrait bitmap, with palette
-        // if (assetName !== "MMENUHS.DEF") continue;
+        // if (assetName !== "HPL000KN.PCX") continue; // orrin portrait bitmap, with palette
+        if (assetName !== "MMENUHS.DEF") continue;
+        // if (assetName !== "SGTWMTA.DEF") continue; // old format
         // if (assetName !== "AH06_E.DEF") continue;
         // if (assetName !== "COHDEM45.PCX") continue;
         // if (assetName !== "HPS001PL.PCX") continue; // with palette
@@ -79,7 +80,6 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
             } else { // DEF
                 parseDef(itemBuffer, lodName, assetName, db, hashes, assetPaths);
             }
-            // return;
         }
     }
 };

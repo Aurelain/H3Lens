@@ -1,9 +1,11 @@
 const fs = require('fs');
 const zlib = require('zlib');
-const memoize = require('memoize-one');
 const rgbToDec = require('../utils/rgbToDec');
+const show = require('../utils/show');
 
-
+const customPalette = new Uint8ClampedArray(256 * 3);
+const mapColorToIndex = {};
+fillCustomPaletteAndColorMap();
 
 /**
  *
@@ -56,11 +58,17 @@ const injectAssets = (lodPath, db, assetPaths) => {
                     item.buffer = createSimpleBitmap(dbItem);
                 }
             } else {
-                item.buffer = f.slice(begin, begin + size);
-                if (csize) {
-                    item.buffer = zlib.unzipSync(item.buffer);
+                const dbItems = [];
+                for (const index of indexes) {
+                    dbItems.push(db[index]);
                 }
-                item.buffer = createDef(item, dbItem);
+                let buffer = f.slice(begin, begin + size);
+                if (csize) {
+                    buffer = zlib.unzipSync(buffer);
+                }
+                const defModel = reinterpretDef(buffer);
+                console.log(JSON.stringify(defModel, null, 4));
+                // item.buffer = createDef(dbItems, buffer);
             }
             item.usize = item.buffer.length;
             item.csize = 0;
@@ -101,21 +109,6 @@ const injectAssets = (lodPath, db, assetPaths) => {
         fs.writeFileSync(lodPath, o);
     }
 };
-
-/**
- *
- */
-const memoPaths = memoize(db => {
-    const paths = {};
-    for (const item of db) {
-        const path = item.lodName + '/' + item.assetName;
-        if (!paths[path]) {
-            paths[path] = [];
-        }
-        paths[path].push(item);
-    }
-    return paths;
-});
 
 /**
  *
@@ -165,9 +158,266 @@ const createSimpleBitmap = ({rgba, w, h}) => {
 };
 
 /**
- *
+ * {
+ *     defType: 47,
+ *     defWidth: 100,
+ *     defHeight: 100,
+ *     groupsCount: 4,
+ *     groups: [
+ *         {
+ *             groupId: 1,
+ *             unknownA: 1,
+ *             unknownB: 1,
+ *             spritesCount: 6,
+ *             sprites: [
+ *                 {
+ *                     name: 'FOO.PCX',
+ *                     nameBuffer: Buffer(13),
+ *                     offset: 123123,
+ *                     size: 14400,
+ *                     fullWidth: 302,
+ *                     fullHeight: 102,
+ *                     width: 300,
+ *                     height: 100,
+ *                     leftMargin: 1,
+ *                     topMargin: 1,
+ *                 },
+ *                 ...
+ *             ],
+ *         },
+ *         ...
+ *     ],
+ * }
  */
-const createDef = () => {
+const reinterpretDef = (f) => {
+    let p = 0;
+
+    const defType = f.readUInt32LE(p);
+    p += 4;
+
+    const defWidth = f.readUInt32LE(p);
+    p += 4;
+
+    const defHeight = f.readUInt32LE(p);
+    p += 4;
+
+    const groupsCount = f.readUInt32LE(p);
+    p += 4;
+
+    p += 256 * 3; // skip palette
+
+    const groups = [];
+    const allSprites = [];
+    for (let i = 0; i < groupsCount; i++) {
+
+        const groupId = f.readUInt32LE(p);
+        p += 4;
+
+        const spritesCount = f.readUInt32LE(p);
+        p += 4;
+
+        const unknownA = f.readUInt32LE(p);
+        p += 4;
+
+        const unknownB = f.readUInt32LE(p);
+        p += 4;
+
+        const sprites = [];
+        for (let j = 0; j < spritesCount; j++) {
+
+            const nameBuffer = f.slice(p, p + 13);
+            p += 13;
+
+            const sprite = {
+                // nameBuffer,
+                name: clean(nameBuffer.toString()),
+            };
+            sprites.push(sprite);
+            allSprites.push(sprite);
+        }
+
+        for (let j = 0; j < spritesCount; j++) {
+
+            sprites[j].offset = f.readUInt32LE(p);
+            p += 4;
+
+        }
+        groups.push({
+            groupId,
+            spritesCount,
+            unknownA,
+            unknownB,
+            sprites,
+        });
+    }
+
+    for (const sprite of allSprites) {
+        p = sprite.offset;
+
+        sprite.size = f.readUInt32LE(p);
+        p += 4;
+
+        sprite.format = f.readUInt32LE(p);
+        p += 4;
+
+        sprite.fullWidth = f.readUInt32LE(p);
+        p += 4;
+
+        sprite.fullHeight = f.readUInt32LE(p);
+        p += 4;
+
+        sprite.width = f.readUInt32LE(p);
+        p += 4;
+
+        sprite.height = f.readUInt32LE(p);
+        p += 4;
+
+        sprite.leftMargin = f.readUInt32LE(p);
+        p += 4;
+
+        sprite.topMargin = f.readUInt32LE(p);
+        p += 4;
+
+        // special case for some "old" format defs (SGTWMTA.DEF and SGTWMTB.DEF)
+        if (sprite.format === 1 && sprite.width > sprite.fullWidth && sprite.height > sprite.fullHeight) {
+            sprite.width = sprite.fullWidth;
+            sprite.height = sprite.fullHeight;
+            sprite.leftMargin = 0;
+            sprite.topMargin = 0;
+        }
+    }
+
+    return {
+        defType,
+        defWidth,
+        defHeight,
+        groupsCount,
+        groups,
+    }
+
+};
+
+
+/**
+ * Based on `parseDef()` from "parseAssets.js".
+ */
+const createDef = (dbItems, f) => {
+    let p = 12; // skip type, width and height
+
+    const groupsCount = f.readUInt32LE(p);
+    p += 4;
+
+    for (let i = 0; i < 256; i++) {
+        p += 3;
+    }
+
+    const offsets = [];
+    for (let i = 0; i < groupsCount; i++) {
+        p += 4; // skip group id
+
+        const spritesCount = f.readUInt32LE(p);
+        p += 4;
+
+        p += 8; // skip 8 unknown bytes
+
+        for (let j = 0; j < spritesCount; j++) {
+            p += 13;
+        }
+        for (let j = 0; j < spritesCount; j++) {
+            offsets.push(f.readUInt32LE(p));
+            p += 4;
+        }
+    }
+    const beginningSize = p;
+    let bufferSize = beginningSize;
+
+    const frames = [];
+    console.log('bufferSize', bufferSize);
+    for (const offset of offsets) {
+        p = offset;
+        p += 4; // skip size
+        const format = f.readUInt32LE(p);
+        const fullWidth = f.readUInt32LE(p + 4);
+        const fullHeight = f.readUInt32LE(p + 8);
+        let width = f.readUInt32LE(p + 12);
+        let height = f.readUInt32LE(p + 16);
+        let leftMargin = f.readUInt32LE(p + 20);
+        let topMargin = f.readUInt32LE(p + 24);
+
+        // special case for some "old" format defs (SGTWMTA.DEF and SGTWMTB.DEF)
+        if (format === 1 && width > fullWidth && height > fullHeight) {
+            width = fullWidth;
+            height = fullHeight;
+            leftMargin = 0;
+            topMargin = 0;
+        }
+        frames.push({
+            offset: bufferSize,
+            size: width * height,
+            fullWidth,
+            fullHeight,
+            width,
+            height,
+            leftMargin,
+            topMargin,
+        });
+        bufferSize += width * height + 32; // 32 is the future header size
+    }
+
+    const buffer = Buffer.alloc(bufferSize);
+    buffer.fill(f, 0, beginningSize);
+    let currentFrame = 0;
+    p = 12; // skip type, width and height
+    p += 4; // skip groupCount
+    for (const paletteCell of palette) {
+        buffer.writeUInt8(paletteCell, p);
+        p++;
+    }
+    for (let i = 0; i < groupsCount; i++) {
+        p += 4; // skip group id
+        const spritesCount = f.readUInt32LE(p);
+        p += 4;
+        p += 8; // skip 8 unknown bytes
+        for (let j = 0; j < spritesCount; j++) {
+            p += 13; // skip names
+        }
+        for (let j = 0; j < spritesCount; j++) {
+            buffer.writeUInt32LE(frames[currentFrame].offset, p);
+            p += 4;
+            currentFrame++;
+        }
+    }
+    for (const {size, fullWidth, fullHeight, width, height, leftMargin, topMargin} of frames) {
+        buffer.writeUInt32LE(size, p);
+        p += 4;
+        buffer.writeUInt32LE(0, p); // format
+        p += 4;
+        buffer.writeUInt32LE(fullWidth, p);
+        p += 4;
+        buffer.writeUInt32LE(fullHeight, p);
+        p += 4;
+        buffer.writeUInt32LE(width, p);
+        p += 4;
+        buffer.writeUInt32LE(height, p);
+        p += 4;
+        buffer.writeUInt32LE(leftMargin, p);
+        p += 4;
+        buffer.writeUInt32LE(topMargin, p);
+        p += 4;
+        buffer.writeUInt32LE(size, p);
+        p += 4;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                buffer.writeUInt8(0, p++);
+            }
+        }
+    }
+
+    const myDb = {};
+    parseDef(buffer, 'a', 'b', myDb, {}, {});
+    console.log(myDb);
+
+    console.log(frames);
 
 };
 
@@ -175,7 +425,7 @@ const createDef = () => {
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
  */
-const parseDef = (f, defName, db, hashes) => {
+const parseDef = (f) => {
     let p = 12; // skip type, width and height
 
     const groupsCount = f.readUInt32LE(p);
@@ -208,19 +458,19 @@ const parseDef = (f, defName, db, hashes) => {
         }
         for (let j = 0; j < spritesCount; j++) {
             sprites.push({
-                name: names[j],
+                frameName: names[j],
                 offset: f.readUInt32LE(p),
             });
             p += 4;
         }
     }
     const usedNames = {};
-    for (const {name, offset} of sprites) {
-        if (usedNames[name]) {
+    for (const {frameName, offset} of sprites) {
+        if (usedNames[frameName]) {
             continue; // Assumption: a frame named exactly like a previous frame is identical and we can skip it.
         }
 
-        usedNames[name] = true;
+        usedNames[frameName] = true;
         p = offset;
         p += 4; // skip size
         const format = f.readUInt32LE(p);
@@ -332,10 +582,11 @@ const parseDef = (f, defName, db, hashes) => {
                 console.log('Unknown format!', format);
                 break;
         }
-        keep(rgba, width, height, name, defName, db, hashes);
-        // return;
+        show(rgba, width, height);
+        return;
     }
 };
+
 
 const clean = (s) => {
     return s.replace(/[^a-zA-Z0-9_.][\s\S]*/g, '').toUpperCase();
@@ -357,22 +608,7 @@ const convertBgrToRgba = (rgbBuffer) => {
 /**
  *
  */
-const keep = (rgba, w, h, name, suffix, db, hashes) => {
-    if (rgba) {
-        const hash = md5(rgba);
-        if (!hashes[hash]) {
-            db.push({rgba, w, h, name, suffix, hash});
-            hashes[hash] = true;
-            // require('../utils/show')(rgba, w, h, 10);
-            // console.log(path.join(destinationDir, name + '-' + suffix + '.png'));
-        }
-    }
-};
-/**
- *
- */
-const buildCustomPalette = () => {
-    const palette = new Uint8ClampedArray(256 * 3);
+function fillCustomPaletteAndColorMap () {
     const colors = [
         0, 255, 255,
         255, 150, 255,
@@ -402,17 +638,12 @@ const buildCustomPalette = () => {
         0xff, 0xff, 0xff,
     ];
     for (let i = 0; i < colors.length; i++) {
-        palette[i] = colors[i];
+        customPalette[i] = colors[i];
     }
-    const mapColorToIndex = {};
     let index = 0;
-    for (let i = 0; i < colors.length; i+=3) {
-        mapColorToIndex[rgbToDec(colors[i+2], colors[i+1], colors[i])] = index++;
+    for (let i = 0; i < colors.length; i += 3) {
+        mapColorToIndex[rgbToDec(colors[i + 2], colors[i + 1], colors[i])] = index++;
     }
-    return {palette, mapColorToIndex};
-};
-
-
-const {palette, mapColorToIndex} = buildCustomPalette();
+}
 
 module.exports = injectAssets;
