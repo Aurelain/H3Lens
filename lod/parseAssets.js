@@ -51,10 +51,12 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
         // if (assetName !== "GAMSELBK.PCX") continue; // main menu background bitmap, no palette
         // if (assetName !== "HPL000KN.PCX") continue; // orrin portrait bitmap, with palette
         if (assetName !== "MMENUHS.DEF") continue;
+        // if (assetName !== "MMENUQT.DEF") continue;
         // if (assetName !== "SGTWMTA.DEF") continue; // old format
         // if (assetName !== "AH06_E.DEF") continue;
         // if (assetName !== "COHDEM45.PCX") continue;
         // if (assetName !== "HPS001PL.PCX") continue; // with palette
+        // if (assetName !== "AVGPIXIE.DEF") continue;
 
         if (assetName.match(/\.PCX$|\.DEF$/)) {
             let itemBuffer;

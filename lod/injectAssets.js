@@ -58,17 +58,17 @@ const injectAssets = (lodPath, db, assetPaths) => {
                     item.buffer = createSimpleBitmap(dbItem);
                 }
             } else {
-                const dbItems = [];
+                const dbItems = {};
                 for (const index of indexes) {
-                    dbItems.push(db[index]);
+                    const dbItem = db[index];
+                    dbItems[dbItem.frameName] = dbItem;
                 }
                 let buffer = f.slice(begin, begin + size);
                 if (csize) {
                     buffer = zlib.unzipSync(buffer);
                 }
                 const defModel = reinterpretDef(buffer);
-                console.log(JSON.stringify(defModel, null, 4));
-                // item.buffer = createDef(dbItems, buffer);
+                item.buffer = createDef(dbItems, defModel) || buffer;
             }
             item.usize = item.buffer.length;
             item.csize = 0;
@@ -128,7 +128,7 @@ const createBitmapWithPalette = ({rgba, w, h}) => {
             p++;
         }
     }
-    for (const paletteCell of palette) {
+    for (const paletteCell of customPalette) {
         buffer.writeUInt8(paletteCell, p);
         p++;
     }
@@ -172,9 +172,9 @@ const createSimpleBitmap = ({rgba, w, h}) => {
  *             sprites: [
  *                 {
  *                     name: 'FOO.PCX',
- *                     nameBuffer: Buffer(13),
  *                     offset: 123123,
  *                     size: 14400,
+ *                     format: 0,
  *                     fullWidth: 302,
  *                     fullHeight: 102,
  *                     width: 300,
@@ -299,126 +299,120 @@ const reinterpretDef = (f) => {
 
 
 /**
- * Based on `parseDef()` from "parseAssets.js".
+ *
  */
-const createDef = (dbItems, f) => {
-    let p = 12; // skip type, width and height
+const createDef = (dbItems, defModel) => {
+    console.log(JSON.stringify(defModel, null, 4));
+    const {defType, defWidth, defHeight, groupsCount, groups} = defModel;
+    let bufferSize = 0;
+    bufferSize += 16;                                        // type, width, height, groupsCount
+    bufferSize += 256 * 3;                                   // palette
+    for (const {sprites} of groups) {
+        bufferSize += 16;                                    // groupId, spritesCount, unknownA, unknownB
+        for (const {width, height} of sprites) {
+            bufferSize += 13;                                // sprite name
+            bufferSize += 4;                                 // sprite offset
+        }
+    }
+    for (const {sprites} of groups) {
+        for (const sprite of sprites) {
+            sprite.offset = bufferSize; // Note: mutates the model!
+            bufferSize += 32;                               // sprite meta
+            bufferSize += sprite.width * sprite.height;     // sprite bytes
+        }
+    }
+    const f = Buffer.alloc(bufferSize);
 
-    const groupsCount = f.readUInt32LE(p);
+    let p = 0;
+
+    f.writeUInt32LE(defType, p);
     p += 4;
 
-    for (let i = 0; i < 256; i++) {
-        p += 3;
-    }
+    f.writeUInt32LE(defWidth, p);
+    p += 4;
 
-    const offsets = [];
-    for (let i = 0; i < groupsCount; i++) {
-        p += 4; // skip group id
+    f.writeUInt32LE(defHeight, p);
+    p += 4;
 
-        const spritesCount = f.readUInt32LE(p);
-        p += 4;
+    f.writeUInt32LE(groupsCount, p);
+    p += 4;
 
-        p += 8; // skip 8 unknown bytes
-
-        for (let j = 0; j < spritesCount; j++) {
-            p += 13;
-        }
-        for (let j = 0; j < spritesCount; j++) {
-            offsets.push(f.readUInt32LE(p));
-            p += 4;
-        }
-    }
-    const beginningSize = p;
-    let bufferSize = beginningSize;
-
-    const frames = [];
-    console.log('bufferSize', bufferSize);
-    for (const offset of offsets) {
-        p = offset;
-        p += 4; // skip size
-        const format = f.readUInt32LE(p);
-        const fullWidth = f.readUInt32LE(p + 4);
-        const fullHeight = f.readUInt32LE(p + 8);
-        let width = f.readUInt32LE(p + 12);
-        let height = f.readUInt32LE(p + 16);
-        let leftMargin = f.readUInt32LE(p + 20);
-        let topMargin = f.readUInt32LE(p + 24);
-
-        // special case for some "old" format defs (SGTWMTA.DEF and SGTWMTB.DEF)
-        if (format === 1 && width > fullWidth && height > fullHeight) {
-            width = fullWidth;
-            height = fullHeight;
-            leftMargin = 0;
-            topMargin = 0;
-        }
-        frames.push({
-            offset: bufferSize,
-            size: width * height,
-            fullWidth,
-            fullHeight,
-            width,
-            height,
-            leftMargin,
-            topMargin,
-        });
-        bufferSize += width * height + 32; // 32 is the future header size
-    }
-
-    const buffer = Buffer.alloc(bufferSize);
-    buffer.fill(f, 0, beginningSize);
-    let currentFrame = 0;
-    p = 12; // skip type, width and height
-    p += 4; // skip groupCount
-    for (const paletteCell of palette) {
-        buffer.writeUInt8(paletteCell, p);
+    for (const paletteCell of customPalette) {
+        f.writeUInt8(paletteCell, p);
         p++;
     }
-    for (let i = 0; i < groupsCount; i++) {
-        p += 4; // skip group id
-        const spritesCount = f.readUInt32LE(p);
+
+    for (const {groupId, spritesCount, unknownA, unknownB, sprites} of groups) {
+
+        f.writeUInt32LE(groupId, p);
         p += 4;
-        p += 8; // skip 8 unknown bytes
-        for (let j = 0; j < spritesCount; j++) {
-            p += 13; // skip names
+
+        f.writeUInt32LE(spritesCount, p);
+        p += 4;
+
+        f.writeUInt32LE(unknownA, p);
+        p += 4;
+
+        f.writeUInt32LE(unknownB, p);
+        p += 4;
+
+        for (const {name} of sprites) {
+            f.write(name, p, 13);
+            p += 13;
         }
-        for (let j = 0; j < spritesCount; j++) {
-            buffer.writeUInt32LE(frames[currentFrame].offset, p);
+
+        for (const {offset} of sprites) {
+            f.writeUInt32LE(offset, p);
             p += 4;
-            currentFrame++;
         }
     }
-    for (const {size, fullWidth, fullHeight, width, height, leftMargin, topMargin} of frames) {
-        buffer.writeUInt32LE(size, p);
-        p += 4;
-        buffer.writeUInt32LE(0, p); // format
-        p += 4;
-        buffer.writeUInt32LE(fullWidth, p);
-        p += 4;
-        buffer.writeUInt32LE(fullHeight, p);
-        p += 4;
-        buffer.writeUInt32LE(width, p);
-        p += 4;
-        buffer.writeUInt32LE(height, p);
-        p += 4;
-        buffer.writeUInt32LE(leftMargin, p);
-        p += 4;
-        buffer.writeUInt32LE(topMargin, p);
-        p += 4;
-        buffer.writeUInt32LE(size, p);
-        p += 4;
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                buffer.writeUInt8(0, p++);
+    for (const {sprites} of groups) {
+        for (const sprite of sprites) {
+            const {name, fullWidth, fullHeight, width, height, leftMargin, topMargin} = sprite;
+
+            f.writeUInt32LE(width * height, p);
+            p += 4;
+
+            f.writeUInt32LE(0, p); // format
+            p += 4;
+
+            f.writeUInt32LE(fullWidth, p);
+            p += 4;
+
+            f.writeUInt32LE(fullHeight, p);
+            p += 4;
+
+            f.writeUInt32LE(width, p);
+            p += 4;
+
+            f.writeUInt32LE(height, p);
+            p += 4;
+
+            f.writeUInt32LE(leftMargin, p);
+            p += 4;
+
+            f.writeUInt32LE(topMargin, p);
+            p += 4;
+
+            if (!dbItems[name]) {
+                console.log(name, sprite);
+                return;
             }
+            const {rgba} = dbItems[name];
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const i = y * width * 4 + x * 4;
+                    const dec = rgbToDec(rgba[i + 2], rgba[i + 1], rgba[i]);
+                    f.writeUInt8(mapColorToIndex[dec], p);
+                    p++;
+                }
+            }
+
         }
     }
 
-    const myDb = {};
-    parseDef(buffer, 'a', 'b', myDb, {}, {});
-    console.log(myDb);
-
-    console.log(frames);
-
+    return f;
+    // parseDef(f);
 };
 
 
@@ -582,7 +576,7 @@ const parseDef = (f) => {
                 console.log('Unknown format!', format);
                 break;
         }
-        show(rgba, width, height);
+        show(rgba, width, height, 4);
         return;
     }
 };
@@ -608,7 +602,7 @@ const convertBgrToRgba = (rgbBuffer) => {
 /**
  *
  */
-function fillCustomPaletteAndColorMap () {
+function fillCustomPaletteAndColorMap() {
     const colors = [
         0, 255, 255,
         255, 150, 255,

@@ -40,7 +40,7 @@ const run = () => {
     console.log(db);
     console.log(hashes);
     console.log(assetPaths);
-    // markAssets(db);
+    markAssets(db);
 
     for (const {rgba, w, h} of db) {
         // show(rgba, w, h, 1);
