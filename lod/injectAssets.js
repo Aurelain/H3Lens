@@ -9,6 +9,7 @@ const encoders = {
     '0': encodeRgbaToFormat0,
     '1': encodeRgbaToFormat1,
     '2': encodeRgbaToFormat2,
+    '3': encodeRgbaToFormat3,
 };
 
 /**
@@ -345,7 +346,7 @@ const createDef = (dbItems, defModel) => {
                 fs.writeFileSync('bytes2.buf', bytes);
             }
             sprite.bytes = bytes;
-            sprite.size = bytes.length;
+            sprite.size = sprite.bytes.length;
             bufferSize += sprite.size;
         }
     }
@@ -544,6 +545,64 @@ function encodeRgbaToFormat2(rgba, w, h, paletteMap) {
                 lines[lengthSlot] = 7 * 32 + length;
             }
         }
+    }
+    return Buffer.concat([offsets, Buffer.from(lines)], offsets.length + lines.length);
+}
+
+/**
+ *
+ */
+function encodeRgbaToFormat3(rgba, w, h, paletteMap) {
+    const zones = Math.ceil(w / 32);
+    let p = 0;
+    const offsets = Buffer.alloc(h * 2 * zones);
+    const lines = [];
+    for (let y = 0; y < h; y++) {
+        for (let k = 0; k < zones; k++) {
+            offsets.writeUInt16LE(offsets.length + lines.length, p);
+            p += 2;
+            const lowerX = k * 32;
+            const upperX = Math.min(w, (k + 1) * 32);
+            for (let x = lowerX; x < upperX; x++) {
+                const i = y * w * 4 + x * 4;
+                const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+                const index = paletteMap[dec];
+                if (index <= 9) { // game palette
+                    let length = 0;
+                    for (let z = x + 1; z < upperX; z++) {
+                        const i = y * w * 4 + z * 4;
+                        const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+                        const futureIndex = paletteMap[dec];
+                        if (futureIndex !== index) {
+                            break;
+                        }
+                        length++;
+                    }
+                    x += length;
+                    const rle = index * 32 + length;
+                    lines.push(rle);
+                } else {
+                    let length = 0;
+                    lines.push(0); // will update later
+                    const lengthSlot = lines.length - 1;
+                    lines.push(index);
+                    for (let z = x + 1; z < upperX; z++) {
+                        const j = y * w * 4 + z * 4;
+                        const dec = rgbToDec(rgba[j], rgba[j + 1], rgba[j + 2]);
+                        const futureIndex = paletteMap[dec];
+                        if (futureIndex <= 9) { // game palette
+                            break;
+                        }
+                        lines.push(futureIndex);
+                        length++;
+                    }
+                    x += length;
+                    lines[lengthSlot] = 7 * 32 + length;
+                }
+            }
+
+        }
+
     }
     return Buffer.concat([offsets, Buffer.from(lines)], offsets.length + lines.length);
 }
