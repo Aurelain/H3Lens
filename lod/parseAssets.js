@@ -59,7 +59,10 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
         // if (assetName !== "GRASTL.DEF") continue;        // format 0, grass
         // if (assetName !== "DIALGBOX.DEF") continue;      // format 1, dialog box
         // if (assetName !== "COBBRD.DEF") continue;        // format 2, a road
-        // if (assetName !== "AH06_E.DEF") continue;           // format 3, a hero
+        // if (assetName !== "AH06_E.DEF") continue;        // format 3, a hero
+        // if (assetName !== "MUPOPUP.PCX") continue;       // multi-player
+
+        if (assetName === "CMNUMWIN.PCX") continue;         // hit-points label gets colorized by the game
 
         if (assetName.match(/\.PCX$|\.DEF$/)) {
             let itemBuffer;
@@ -323,10 +326,14 @@ const keep = (rgba, w, h, lodName, assetName, frameName, db, hashes, assetPaths)
             hashes[hash] = index;
         }
         const assetPath = lodName + '/' + assetName;
-        if (!assetPaths[assetPath]) {
-            assetPaths[assetPath] = [];
+        if (typeof frameName === 'string') { // string => def
+            if (!assetPaths[assetPath]) {
+                assetPaths[assetPath] = {};
+            }
+            assetPaths[assetPath][frameName] = db[index];
+        } else { // boolean => bitmap
+            assetPaths[assetPath] = db[index];
         }
-        assetPaths[assetPath].push(index);
     }
 };
 

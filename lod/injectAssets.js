@@ -52,28 +52,23 @@ const injectAssets = (lodPath, db, assetPaths) => {
         const {assetName, begin, csize, usize} = item;
         const size = csize || usize;
         const assetPath = lodName + '/' + assetName;
-        if (assetPath in assetPaths) {
+        const dbItem = assetPaths[assetPath]; // undefined, dbItem or array of dbItem
+        if (dbItem) {
             const indexes = assetPaths[assetPath];
             hasChanged = true;
             if (assetName.match(/PCX$/)) {
-                const dbItem = db[indexes[0]]; // the only available index is 0
                 if (dbItem.frameName) {
                     item.buffer = createBitmapWithPalette(dbItem);
                 } else {
                     item.buffer = createSimpleBitmap(dbItem);
                 }
             } else {
-                const dbItems = {};
-                for (const index of indexes) {
-                    const dbItem = db[index];
-                    dbItems[dbItem.frameName] = dbItem;
-                }
                 let buffer = f.slice(begin, begin + size);
                 if (csize) {
                     buffer = zlib.unzipSync(buffer);
                 }
                 const defModel = reinterpretDef(buffer);
-                item.buffer = createDef(dbItems, defModel) || buffer;
+                item.buffer = createDef(dbItem, defModel) || buffer;
             }
             item.usize = item.buffer.length;
             item.csize = 0;
@@ -128,7 +123,7 @@ const createBitmapWithPalette = ({rgba, w, h}) => {
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const i = y * w * 4 + x * 4;
-            const dec = rgbToDec(rgba[i + 2], rgba[i + 1], rgba[i]);
+            const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
             buffer.writeUInt8(customPaletteMap[dec], p);
             p++;
         }
@@ -333,10 +328,6 @@ const createDef = (dbItems, defModel) => {
     for (const {sprites} of groups) {
         for (const sprite of sprites) {
             const {width, height, format, name} = sprite;
-            if (!dbItems[name]) {
-                console.log(name, sprite);
-                return;
-            }
             sprite.offset = bufferSize;
             bufferSize += 32;                                       // sprite meta
             const bytes = encoders[format](dbItems[name].rgba, width, height, paletteMap);
