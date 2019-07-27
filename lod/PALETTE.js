@@ -10,4 +10,5 @@ module.exports = {
     [rgbToDec(180, 0, 255)]: true,
     [rgbToDec(0, 255, 0)]: true,
     [rgbToDec(255, 128, 255)]: true,
+    [rgbToDec(255, 128, 255)]: true,
 };

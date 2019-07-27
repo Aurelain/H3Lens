@@ -32,9 +32,19 @@ const run = () => {
     const db = [];
     const hashes = {};
     const assetPaths = {};
-    const lods = fs.readdirSync(SOURCE_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');
-    for (const lod of lods) {
-        parseAssets(path.join(SOURCE_DIR, lod), db, hashes, assetPaths);
+    const lods = [];
+
+    for (const fileName of fs.readdirSync(SOURCE_DIR)) {
+        if (path.extname(fileName).toLowerCase() === '.lod') {
+            lods.push({
+                lodPath: path.join(SOURCE_DIR, fileName),
+                lodName: fileName,
+            });
+        }
+    }
+
+    for (const {lodPath} of lods) {
+        parseAssets(lodPath, db, hashes, assetPaths);
     }
 
     console.log(db);
@@ -43,12 +53,13 @@ const run = () => {
     markAssets(db);
 
     for (const {rgba, w, h} of db) {
-        // show(rgba, w, h, 1);
+        // show(rgba, w, h, 5);
     }
 
-    const gameLods = fs.readdirSync(GAME_DATA_DIR).filter(name => path.extname(name).toLowerCase() === '.lod');
-    for (const lod of gameLods) {
-        injectAssets(path.join(GAME_DATA_DIR, lod), db, assetPaths);
+    for (const {lodName, lodPath} of lods) {
+        const loxPath = path.join(GAME_DATA_DIR, lodName.replace(/\.lod$/, '.lox'));
+        fs.copyFileSync(lodPath, loxPath);
+        injectAssets(loxPath, db, assetPaths);
     }
 
 

@@ -20,7 +20,7 @@ const PALETTE = require('./PALETTE');
  * @param assetPaths
  */
 const parseAssets = (lodPath, db, hashes, assetPaths) => {
-    const lodName = lodPath.match(/[^\/\\]+$/)[0];
+    const lodName = lodPath.match(/(\w+)\.\w+$/)[1];
     const f = fs.readFileSync(lodPath);
     const itemsCount = f.readUInt32LE(8);
     let p = 92; // the records always start at 0x5C
@@ -50,7 +50,7 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
     for (const {assetName, begin, csize, usize} of list) {
         // if (assetName !== "GAMSELBK.PCX") continue; // main menu background bitmap, no palette
         // if (assetName !== "HPL000KN.PCX") continue; // orrin portrait bitmap, with palette
-        if (assetName !== "MMENUHS.DEF") continue;
+        // if (assetName !== "MMENUHS.DEF") continue;
         // if (assetName !== "MMENUQT.DEF") continue;
         // if (assetName !== "SGTWMTA.DEF") continue; // old format
         // if (assetName !== "AH06_E.DEF") continue;

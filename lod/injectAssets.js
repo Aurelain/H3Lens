@@ -3,9 +3,8 @@ const zlib = require('zlib');
 const rgbToDec = require('../utils/rgbToDec');
 const show = require('../utils/show');
 
-const customPalette = new Uint8ClampedArray(256 * 3);
-const mapColorToIndex = {};
-fillCustomPaletteAndColorMap();
+const customPalette = buildCustomPalette();
+const customPaletteMap = buildPaletteMap(customPalette);
 
 /**
  *
@@ -14,7 +13,7 @@ fillCustomPaletteAndColorMap();
  * @param assetPaths
  */
 const injectAssets = (lodPath, db, assetPaths) => {
-    const lodName = lodPath.match(/[^\/\\]+$/)[0];
+    const lodName = lodPath.match(/(\w+)\.\w+$/)[1];
     const f = fs.readFileSync(lodPath);
     const itemsCount = f.readUInt32LE(8);
     let p = 92; // the records always start at 0x5C
@@ -124,7 +123,7 @@ const createBitmapWithPalette = ({rgba, w, h}) => {
         for (let x = 0; x < w; x++) {
             const i = y * w * 4 + x * 4;
             const dec = rgbToDec(rgba[i + 2], rgba[i + 1], rgba[i]);
-            buffer.writeUInt8(mapColorToIndex[dec], p);
+            buffer.writeUInt8(customPaletteMap[dec], p);
             p++;
         }
     }
@@ -204,6 +203,7 @@ const reinterpretDef = (f) => {
     const groupsCount = f.readUInt32LE(p);
     p += 4;
 
+    // const palette = f.slice(p, p + 256 * 3);
     p += 256 * 3; // skip palette
 
     const groups = [];
@@ -229,7 +229,6 @@ const reinterpretDef = (f) => {
             p += 13;
 
             const sprite = {
-                // nameBuffer,
                 name: clean(nameBuffer.toString()),
             };
             sprites.push(sprite);
@@ -285,12 +284,15 @@ const reinterpretDef = (f) => {
             sprite.leftMargin = 0;
             sprite.topMargin = 0;
         }
+
+        // sprite.bytes = f.slice(p, p + sprite.size);
     }
 
     return {
         defType,
         defWidth,
         defHeight,
+        // palette,
         groupsCount,
         groups,
     }
@@ -299,28 +301,39 @@ const reinterpretDef = (f) => {
 
 
 /**
- *
+ * Dynamic fields:
+ *      - sprite offset
+ *      - sprite size
+ *      - line offset
  */
 const createDef = (dbItems, defModel) => {
-    console.log(JSON.stringify(defModel, null, 4));
-    const {defType, defWidth, defHeight, groupsCount, groups} = defModel;
+    // console.log(JSON.stringify(defModel, null, 4));
+    const {defType, defWidth, defHeight, groupsCount, palette, groups} = defModel;
+
     let bufferSize = 0;
-    bufferSize += 16;                                        // type, width, height, groupsCount
-    bufferSize += 256 * 3;                                   // palette
-    for (const {sprites} of groups) {
-        bufferSize += 16;                                    // groupId, spritesCount, unknownA, unknownB
-        for (const {width, height} of sprites) {
-            bufferSize += 13;                                // sprite name
-            bufferSize += 4;                                 // sprite offset
-        }
+    bufferSize += 16;                                               // type, width, height, groupsCount
+    bufferSize += 256 * 3;                                          // palette
+    for (const {spritesCount} of groups) {
+        bufferSize += 16;                                           // groupId, spritesCount, unknownA, unknownB
+        bufferSize += 13 * spritesCount;                            // sprite name
+        bufferSize += 4 * spritesCount;                             // sprite offset
     }
+
     for (const {sprites} of groups) {
         for (const sprite of sprites) {
-            sprite.offset = bufferSize; // Note: mutates the model!
-            bufferSize += 32;                               // sprite meta
-            bufferSize += sprite.width * sprite.height;     // sprite bytes
+            const {width, height, name} = sprite;
+            if (!dbItems[name]) {
+                console.log(name, sprite);
+                return;
+            }
+            sprite.offset = bufferSize;
+            bufferSize += 32;                                       // sprite meta
+            sprite.bytes = encodeRgbaToFormat1(dbItems[name].rgba, width, height, customPaletteMap);
+            sprite.size = sprite.bytes.length;
+            bufferSize += sprite.size;
         }
     }
+
     const f = Buffer.alloc(bufferSize);
 
     let p = 0;
@@ -338,6 +351,7 @@ const createDef = (dbItems, defModel) => {
     p += 4;
 
     for (const paletteCell of customPalette) {
+    // for (const paletteCell of palette) {
         f.writeUInt8(paletteCell, p);
         p++;
     }
@@ -368,12 +382,12 @@ const createDef = (dbItems, defModel) => {
     }
     for (const {sprites} of groups) {
         for (const sprite of sprites) {
-            const {name, fullWidth, fullHeight, width, height, leftMargin, topMargin} = sprite;
+            const {name, size, fullWidth, fullHeight, width, height, leftMargin, topMargin, bytes} = sprite;
 
-            f.writeUInt32LE(width * height, p);
+            f.writeUInt32LE(size, p);
             p += 4;
 
-            f.writeUInt32LE(0, p); // format
+            f.writeUInt32LE(1, p); // format
             p += 4;
 
             f.writeUInt32LE(fullWidth, p);
@@ -394,27 +408,65 @@ const createDef = (dbItems, defModel) => {
             f.writeUInt32LE(topMargin, p);
             p += 4;
 
-            if (!dbItems[name]) {
-                console.log(name, sprite);
-                return;
-            }
-            const {rgba} = dbItems[name];
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const i = y * width * 4 + x * 4;
-                    const dec = rgbToDec(rgba[i + 2], rgba[i + 1], rgba[i]);
-                    f.writeUInt8(mapColorToIndex[dec], p);
-                    p++;
-                }
-            }
-
+            f.fill(bytes, p, p + size);
+            p += size;
         }
     }
 
-    return f;
     // parseDef(f);
+    return f;
 };
 
+/**
+ *
+ */
+const encodeRgbaToFormat1 = (rgba, w, h, paletteMap) => {
+    const offsets = Buffer.alloc(h * 4);
+    const lines = [];
+    for (let y = 0; y < h; y++) {
+        offsets.writeUInt32LE(offsets.length + lines.length, y * 4);
+        for (let x = 0; x < w; x++) {
+            const i = y * w * 4 + x * 4;
+            const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+            const index = paletteMap[dec];
+            if (index <= 9) { // game palette
+                lines.push(index);
+                let length = 1;
+                let z = x + 1;
+                for (let z = x + 1; z < w; z++) {
+                    const i = y * w * 4 + z * 4;
+                    const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+                    const futureIndex = paletteMap[dec];
+                    if (futureIndex !== index) {
+                        break;
+                    }
+                    length++;
+                }
+                lines.push(length - 1);
+                x += length - 1;
+            } else {
+                lines.push(255);
+                let length = 1;
+                lines.push(0); // will update later
+                const lengthSlot = lines.length - 1;
+                lines.push(index);
+                for (let z = x + 1; z < w; z++) {
+                    const j = y * w * 4 + z * 4;
+                    const dec = rgbToDec(rgba[j], rgba[j + 1], rgba[j + 2]);
+                    const futureIndex = paletteMap[dec];
+                    if (futureIndex <= 9) { // game palette
+                        break;
+                    }
+                    lines.push(futureIndex);
+                    length++;
+                }
+                lines[lengthSlot] = length - 1;
+                x += length - 1;
+            }
+        }
+    }
+    return Buffer.concat([offsets, Buffer.from(lines)], offsets.length + lines.length);
+};
 
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
@@ -576,7 +628,7 @@ const parseDef = (f) => {
                 console.log('Unknown format!', format);
                 break;
         }
-        show(rgba, width, height, 4);
+        show(rgba, width, height, 1);
         return;
     }
 };
@@ -586,33 +638,21 @@ const clean = (s) => {
     return s.replace(/[^a-zA-Z0-9_.][\s\S]*/g, '').toUpperCase();
 };
 
-const convertBgrToRgba = (rgbBuffer) => {
-    const len = rgbBuffer.length;
-    const rgba = new Uint8ClampedArray(len * 4 / 3);
-    let j = 0;
-    for (let i = 0; i < len; i += 3) {
-        rgba[j++] = rgbBuffer[i + 2];
-        rgba[j++] = rgbBuffer[i + 1];
-        rgba[j++] = rgbBuffer[i];
-        rgba[j++] = 255;
-    }
-    return rgba;
-};
-
 /**
  *
  */
-function fillCustomPaletteAndColorMap() {
+function buildCustomPalette() {
     const colors = [
-        0, 255, 255,
-        255, 150, 255,
-        255, 100, 255,
-        255, 50, 255,
-        255, 0, 255,
-        255, 255, 0,
-        180, 0, 255,
-        0, 255, 0,
-        255, 128, 255,
+        0, 255, 255,        // game palette
+        255, 150, 255,      // game palette
+        255, 100, 255,      // game palette
+        255, 50, 255,       // game palette
+        255, 0, 255,        // game palette
+        255, 255, 0,        // game palette
+        180, 0, 255,        // game palette
+        0, 255, 0,          // game palette
+        255, 128, 255,      // game palette
+        255, 128, 255,      // game palette
         0, 0, 0,
         0x10, 0x10, 0x10,
         0x20, 0x20, 0x20,
@@ -631,13 +671,23 @@ function fillCustomPaletteAndColorMap() {
         0xf0, 0xf0, 0xf0,
         0xff, 0xff, 0xff,
     ];
+    const palette = new Uint8ClampedArray(256 * 3);
     for (let i = 0; i < colors.length; i++) {
-        customPalette[i] = colors[i];
+        palette[i] = colors[i];
     }
+    return palette;
+}
+
+/**
+ *
+ */
+function buildPaletteMap(palette) {
+    const pojo = {};
     let index = 0;
-    for (let i = 0; i < colors.length; i += 3) {
-        mapColorToIndex[rgbToDec(colors[i + 2], colors[i + 1], colors[i])] = index++;
+    for (let i = 0; i < palette.length; i += 3) {
+        pojo[rgbToDec(palette[i], palette[i + 1], palette[i + 2])] = index++;
     }
+    return pojo;
 }
 
 module.exports = injectAssets;
