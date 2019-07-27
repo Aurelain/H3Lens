@@ -5,6 +5,11 @@ const show = require('../utils/show');
 
 const customPalette = buildCustomPalette();
 const customPaletteMap = buildPaletteMap(customPalette);
+const encoders = {
+    '0': encodeRgbaToFormat0,
+    '1': encodeRgbaToFormat1,
+    '2': encodeRgbaToFormat2,
+};
 
 /**
  *
@@ -203,7 +208,7 @@ const reinterpretDef = (f) => {
     const groupsCount = f.readUInt32LE(p);
     p += 4;
 
-    // const palette = f.slice(p, p + 256 * 3);
+    const palette = f.slice(p, p + 256 * 3);
     p += 256 * 3; // skip palette
 
     const groups = [];
@@ -285,14 +290,14 @@ const reinterpretDef = (f) => {
             sprite.topMargin = 0;
         }
 
-        // sprite.bytes = f.slice(p, p + sprite.size);
+        sprite.bytes = f.slice(p, p + sprite.size);
     }
 
     return {
         defType,
         defWidth,
         defHeight,
-        // palette,
+        palette,
         groupsCount,
         groups,
     }
@@ -308,7 +313,12 @@ const reinterpretDef = (f) => {
  */
 const createDef = (dbItems, defModel) => {
     // console.log(JSON.stringify(defModel, null, 4));
-    const {defType, defWidth, defHeight, groupsCount, palette, groups} = defModel;
+    const {defType, defWidth, defHeight, groupsCount, groups} = defModel;
+
+    // const palette = defModel.palette;
+    // const paletteMap = buildPaletteMap(palette);
+    const palette = customPalette;
+    const paletteMap = customPaletteMap;
 
     let bufferSize = 0;
     bufferSize += 16;                                               // type, width, height, groupsCount
@@ -318,18 +328,24 @@ const createDef = (dbItems, defModel) => {
         bufferSize += 13 * spritesCount;                            // sprite name
         bufferSize += 4 * spritesCount;                             // sprite offset
     }
-
+    let hasWritten = true;
     for (const {sprites} of groups) {
         for (const sprite of sprites) {
-            const {width, height, name} = sprite;
+            const {width, height, format, name} = sprite;
             if (!dbItems[name]) {
                 console.log(name, sprite);
                 return;
             }
             sprite.offset = bufferSize;
             bufferSize += 32;                                       // sprite meta
-            sprite.bytes = encodeRgbaToFormat1(dbItems[name].rgba, width, height, customPaletteMap);
-            sprite.size = sprite.bytes.length;
+            const bytes = encoders[format](dbItems[name].rgba, width, height, paletteMap);
+            if (!hasWritten) {
+                hasWritten = true;
+                fs.writeFileSync('bytes1.buf', sprite.bytes);
+                fs.writeFileSync('bytes2.buf', bytes);
+            }
+            sprite.bytes = bytes;
+            sprite.size = bytes.length;
             bufferSize += sprite.size;
         }
     }
@@ -350,8 +366,7 @@ const createDef = (dbItems, defModel) => {
     f.writeUInt32LE(groupsCount, p);
     p += 4;
 
-    for (const paletteCell of customPalette) {
-    // for (const paletteCell of palette) {
+    for (const paletteCell of palette) {
         f.writeUInt8(paletteCell, p);
         p++;
     }
@@ -382,12 +397,12 @@ const createDef = (dbItems, defModel) => {
     }
     for (const {sprites} of groups) {
         for (const sprite of sprites) {
-            const {name, size, fullWidth, fullHeight, width, height, leftMargin, topMargin, bytes} = sprite;
+            const {name, size, format, fullWidth, fullHeight, width, height, leftMargin, topMargin, bytes} = sprite;
 
             f.writeUInt32LE(size, p);
             p += 4;
 
-            f.writeUInt32LE(1, p); // format
+            f.writeUInt32LE(format, p);
             p += 4;
 
             f.writeUInt32LE(fullWidth, p);
@@ -420,7 +435,24 @@ const createDef = (dbItems, defModel) => {
 /**
  *
  */
-const encodeRgbaToFormat1 = (rgba, w, h, paletteMap) => {
+function encodeRgbaToFormat0(rgba, w, h, paletteMap) {
+    const buffer = Buffer.alloc(w * h);
+    let p = 0;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = y * w * 4 + x * 4;
+            const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+            buffer.writeUInt8(paletteMap[dec], p);
+            p++;
+        }
+    }
+    return buffer;
+}
+
+/**
+ *
+ */
+function encodeRgbaToFormat1(rgba, w, h, paletteMap) {
     const offsets = Buffer.alloc(h * 4);
     const lines = [];
     for (let y = 0; y < h; y++) {
@@ -432,7 +464,6 @@ const encodeRgbaToFormat1 = (rgba, w, h, paletteMap) => {
             if (index <= 9) { // game palette
                 lines.push(index);
                 let length = 1;
-                let z = x + 1;
                 for (let z = x + 1; z < w; z++) {
                     const i = y * w * 4 + z * 4;
                     const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
@@ -466,7 +497,56 @@ const encodeRgbaToFormat1 = (rgba, w, h, paletteMap) => {
         }
     }
     return Buffer.concat([offsets, Buffer.from(lines)], offsets.length + lines.length);
-};
+}
+
+/**
+ *
+ */
+function encodeRgbaToFormat2(rgba, w, h, paletteMap) {
+    const offsets = Buffer.alloc(h * 2);
+    const lines = [];
+    for (let y = 0; y < h; y++) {
+        offsets.writeUInt16LE(offsets.length + lines.length, y * 2);
+        for (let x = 0; x < w; x++) {
+            const i = y * w * 4 + x * 4;
+            const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+            const index = paletteMap[dec];
+            if (index <= 9) { // game palette
+                let length = 0;
+                for (let z = x + 1; z < w; z++) {
+                    const i = y * w * 4 + z * 4;
+                    const dec = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+                    const futureIndex = paletteMap[dec];
+                    if (futureIndex !== index) {
+                        break;
+                    }
+                    length++;
+                }
+                x += length;
+                const rle = index * 32 + length;
+                lines.push(rle);
+            } else {
+                let length = 0;
+                lines.push(0); // will update later
+                const lengthSlot = lines.length - 1;
+                lines.push(index);
+                for (let z = x + 1; z < w; z++) {
+                    const j = y * w * 4 + z * 4;
+                    const dec = rgbToDec(rgba[j], rgba[j + 1], rgba[j + 2]);
+                    const futureIndex = paletteMap[dec];
+                    if (futureIndex <= 9) { // game palette
+                        break;
+                    }
+                    lines.push(futureIndex);
+                    length++;
+                }
+                x += length;
+                lines[lengthSlot] = 7 * 32 + length;
+            }
+        }
+    }
+    return Buffer.concat([offsets, Buffer.from(lines)], offsets.length + lines.length);
+}
 
 /**
  * https://github.com/vcmi/vcmi/blob/develop/client/gui/CAnimation.cpp
@@ -674,6 +754,12 @@ function buildCustomPalette() {
     const palette = new Uint8ClampedArray(256 * 3);
     for (let i = 0; i < colors.length; i++) {
         palette[i] = colors[i];
+    }
+    // We must obscure the rest of the pixels because sometimes the game uses them to adapt colors to match the theme.
+    for (let i = colors.length; i < palette.length; i += 3) {
+        palette[i] = 200;
+        palette[i + 1] = 0;
+        palette[i + 2] = 200;
     }
     return palette;
 }

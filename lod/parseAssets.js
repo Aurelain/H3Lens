@@ -57,6 +57,9 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
         // if (assetName !== "COHDEM45.PCX") continue;
         // if (assetName !== "HPS001PL.PCX") continue; // with palette
         // if (assetName !== "AVGPIXIE.DEF") continue;
+        // if (assetName !== "GRASTL.DEF") continue;        // format 0, grass
+        // if (assetName !== "DIALGBOX.DEF") continue;      // format 1, dialog box
+        // if (assetName !== "COBBRD.DEF") continue;        // format 2
 
         if (assetName.match(/\.PCX$|\.DEF$/)) {
             let itemBuffer;
@@ -67,6 +70,7 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
                 itemBuffer = f.slice(begin, begin + usize);
             }
             if (assetName.match(/PCX$/)) {
+                continue;
                 const size = itemBuffer.readUInt32LE(0);
                 const w = itemBuffer.readUInt32LE(4);
                 const h = itemBuffer.readUInt32LE(8);
@@ -174,6 +178,9 @@ const parseDef = (f, lodName, assetName, db, hashes, assetPaths) => {
         p = offset;
         p += 4; // skip size
         const format = f.readUInt32LE(p);
+        if (format !== 2) {
+            return;
+        }
         const fullWidth = f.readUInt32LE(p + 4);
         const fullHeight = f.readUInt32LE(p + 8);
         let width = f.readUInt32LE(p + 12);
