@@ -5,6 +5,7 @@ const extractAssets = require('./lod/extractAssets');
 const parseAssets = require('./lod/parseAssets');
 const markAssets = require('./lod/markAssets');
 const injectAssets = require('./lod/injectAssets');
+const cacheAssets = require('./lod/cacheAssets');
 const PALETTE = require('./lod/PALETTE');
 const rgbToDec = require('./utils/rgbToDec');
 const show = require('./utils/show');
@@ -46,6 +47,9 @@ const run = () => {
     for (const {lodPath} of lods) {
         parseAssets(lodPath, db, hashes, assetPaths);
     }
+
+    // cacheAssets(db, path.join(GAME_DATA_DIR, 'db.cache'));
+    // return;
 
     console.log(db);
     console.log(hashes);

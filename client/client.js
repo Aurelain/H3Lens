@@ -2,7 +2,9 @@ const fs = require('fs-extra');
 const path = require('path');
 const {desktopCapturer} = require('electron');
 const parseAssets = require('./lod/parseAssets');
+const readCache = require('./client/readCache');
 const rgbToDec = require('./utils/rgbToDec');
+const show = require('./utils/show');
 
 /*
 const findH3Dir = require('./utils/findH3Dir');
@@ -27,13 +29,14 @@ const W = 800;
 const H = 600;
 const db = [];
 const SOURCE_DIR = "D:\\H3_ALL_Freeze\\HoMM 3 Complete\\Data";
+const CACHE_PATH = "D:\\H3\\HoMM 3 Complete\\Data\\db.cache";
 let used;
 const NR_TO_LETTER = {};
 
 
 const run = async () => {
 
-    parse();
+    readCache(db, CACHE_PATH);
 
     for (let i = 0; i < 16; i++) {
         NR_TO_LETTER[i * 16] = Number(i * 16).toString(16).charAt(0);
@@ -99,27 +102,38 @@ const draw = () => {
     context2.putImageData(imageData, 0, 0);
 
     used = new Uint8Array(W * H * 4);
+    const candidates = {};
 
     const bytes = imageData.data;
     for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
             const i = y * W * 4 + x * 4;
-            const byte = bytes[i];
+            const nr = rgbToDec(bytes[i],bytes[i+1],bytes[i+2]);
             // console.log(i, byte);
-            if (byte === 255) {
-                readMarker(bytes, x, y);
+            if (nr > 16316664) {
+                readMarker(bytes, x, y, candidates);
                 // return;
             }
         }
     }
-
+    // const {rgba, w, h} = db[6812];
+    // show(rgba, w, h,);
+    // console.log(candidates);
+    for (const key in candidates) {
+        const pojo = candidates[key];
+        const {votes, dbItem, originX, originY} = pojo;
+        if (votes > 200) {
+            const {rgba, w, h} = dbItem;
+            context2.putImageData(new ImageData(rgba, w, h), originX, originY);
+        }
+    }
     // requestAnimationFrame(draw);
 };
 
 /**
  *
  */
-const readMarker = (bytes, x, y) => {
+const readMarker = (bytes, x, y, candidates) => {
     const i = y * W * 4 + x * 4;
     const j = (y + 1) * W * 4 + x * 4;
     const k = (y + 2) * W * 4 + x * 4;
@@ -128,6 +142,22 @@ const readMarker = (bytes, x, y) => {
     const left = retrieveNumber([bytes[j + 4], bytes[j + 8], bytes[j + 12], bytes[k]]);
     const top = retrieveNumber([bytes[k + 4], bytes[k + 8], bytes[k + 12], bytes[m]]);
     const rest = retrieveNumber([bytes[m + 4], bytes[m + 8], bytes[m + 12]]);
+    if (id < db.length && left <= 800 && top <= 600) {
+        const originX = x - left;
+        const originY = y - top;
+        if (originX < 0 || originY < 0) {
+            return;
+        }
+        const fingerprint = id + '_' + originX + 'x' + originY;
+        const dbItem = db[id];
+        candidates[fingerprint] = candidates[fingerprint] || {
+            votes: 0,
+            dbItem,
+            originX,
+            originY,
+        };
+        candidates[fingerprint].votes++;
+    }
     // console.log({id, left, top, rest});
 };
 
