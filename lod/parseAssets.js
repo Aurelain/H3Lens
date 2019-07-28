@@ -50,7 +50,7 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
     for (const {assetName, begin, csize, usize} of list) {
         // if (assetName !== "GAMSELBK.PCX") continue; // main menu background bitmap, no palette
         // if (assetName !== "HPL000KN.PCX") continue; // orrin portrait bitmap, with palette
-        // if (assetName !== "MMENUHS.DEF") continue;
+        // if (assetName !== "MMENUHS.DEF") continue;       // main menu high scores
         // if (assetName !== "MMENUQT.DEF") continue;
         // if (assetName !== "SGTWMTA.DEF") continue; // old format
         // if (assetName !== "COHDEM45.PCX") continue;

@@ -108,7 +108,7 @@ const draw = () => {
     for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
             const i = y * W * 4 + x * 4;
-            const nr = rgbToDec(bytes[i],bytes[i+1],bytes[i+2]);
+            const nr = rgbToDec(bytes[i], bytes[i + 1], bytes[i + 2]);
             // console.log(i, byte);
             if (nr > 16316664) {
                 readMarker(bytes, x, y, candidates);

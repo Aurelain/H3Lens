@@ -2,7 +2,9 @@ const {app, BrowserWindow, globalShortcut} = require('electron');
 
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
 
-app.commandLine.appendSwitch('force-color-profile', 'srgb');
+// app.commandLine.appendSwitch('force-color-profile', 'srgb');
+// app.commandLine.appendSwitch('disable-features', 'ColorCorrectRendering');
+// app.commandLine.appendSwitch('disable-color-correct-rendering');
 
 let mainWindow;
 
@@ -26,7 +28,8 @@ app.on('ready', () => {
     // mainWindow.setIgnoreMouseEvents(true);
     // mainWindow.setFullScreen(true);
     mainWindow.webContents.openDevTools();
-    mainWindow.loadFile('index.html');
+    // mainWindow.loadFile('index.html');
+    mainWindow.loadFile('workbench/workbench.html');
 
     // mainWindow.on('focus', () => mainWindow.setFullScreen(true));
     // mainWindow.on('blur', () => console.log('blur'));
