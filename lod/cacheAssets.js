@@ -14,6 +14,7 @@ const cacheAssets = (db, destination) => {
         size += 4;                   // bytes length size
         size += 2;                   // width
         size += 2;                   // height
+        size += 34;                  // path for debugging (8 + 1 + 12 + 1 + 12)
         size += item.rgba.length;    // bytes
     }
     const b = Buffer.alloc(size);
@@ -22,7 +23,7 @@ const cacheAssets = (db, destination) => {
     b.writeUInt16LE(db.length, p);
     p += 2;
 
-    for (const {rgba, w, h} of db) {
+    for (const {rgba, w, h, lodName, assetName, frameName} of db) {
 
         const len = rgba.length;
 
@@ -34,6 +35,9 @@ const cacheAssets = (db, destination) => {
 
         b.writeUInt16LE(h, p);
         p += 2;
+
+        b.write(lodName + '/' + assetName + '/' + frameName, p, 34);
+        p += 34;
 
         b.fill(rgba, p, p + len);
         p += len;

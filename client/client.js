@@ -76,26 +76,6 @@ const run = async () => {
 /**
  *
  */
-const parse = () => {
-    const hashes = {};
-    const assetPaths = {};
-    const lods = [];
-    for (const fileName of fs.readdirSync(SOURCE_DIR)) {
-        if (path.extname(fileName).toLowerCase() === '.lod') {
-            lods.push({
-                lodPath: path.join(SOURCE_DIR, fileName),
-                lodName: fileName,
-            });
-        }
-    }
-    for (const {lodPath} of lods) {
-        parseAssets(lodPath, db, hashes, assetPaths);
-    }
-};
-
-/**
- *
- */
 const draw = () => {
     context.drawImage(video, 0, 0, TEMP_WIDTH, TEMP_HEIGHT);
     const imageData = context.getImageData(3, TEMP_HEIGHT - 2 - H, W, H);

@@ -26,14 +26,15 @@ const readCache = (db, cachePath) => {
         const h = f.readUInt16LE(p);
         p += 2;
 
-        const rgba = new Uint8ClampedArray(f.slice(p, p+len));
+        const path = f.slice(p, p + 34).toString();
+        p += 34;
+
+        const rgba = new Uint8ClampedArray(f.slice(p, p + len));
         p += len;
 
-        db.push({rgba, w, h});
-        // if (i > 10) {
-        //     return;
-        // }
+        db.push({rgba, w, h, path});
     }
+    return db;
 };
 
 module.exports = readCache;
