@@ -1,9 +1,11 @@
 const {nativeImage: NativeImage} = require('electron');
 const readCache = require('../client/readCache');
 const buildSnaps = require('../utils/buildSnaps');
+const renderFrame = require('../client/renderFrame');
 const {initializePicker, configurePicker} = require('./Picker');
 
 const CACHE_PATH = "D:/H3/HoMM 3 Complete/Data/db.cache";
+// const TARGET = 'workbench/screens/Orrin';
 const TARGET = 'workbench/screens/MainMenu';
 const W = 800;
 const H = 600;
@@ -22,7 +24,7 @@ const list = [
 ];
 const contexts = {};
 const screenCanvases = {};
-let zoomFactor = 100;
+let zoomFactor = 1;
 let offsetX = 0;
 let offsetY = 0;
 let dragInitX;
@@ -74,7 +76,7 @@ const run = () => {
                 rgba = getHeatRgba();
                 break;
             case 'lazarus':
-                rgba = getLazarusRgba();
+                rgba = renderFrame(streamRgba, db);
                 break;
             case '--stream-wild-colors':
                 rgba = getWildColorsRgba(db, streamRgba);

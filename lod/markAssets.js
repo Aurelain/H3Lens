@@ -72,34 +72,31 @@ const addMarker = (rgba, x, y, w, i, imageIndex, used) => {
     const grayscaleX = convertNumberToGrayscale(x);
     const grayscaleY = convertNumberToGrayscale(y);
     const payload = [
-        255,                // 0 = mark the beginning with a white dot
-        grayscaleIndex[0],  // 1 = begin image index
-        grayscaleIndex[1],  // 2
-        grayscaleIndex[2],  // 3
-        grayscaleIndex[3],  // 4
-        grayscaleX[0],      // 5 = begin x
-        grayscaleX[1],      // 6
-        grayscaleX[2],      // 7
-        grayscaleX[3],      // 8
-        grayscaleY[0],      // 9 = begin y
-        grayscaleY[1],      // 10
-        grayscaleY[2],      // 11
-        grayscaleY[3],      // 12
+        255,                // 0  = 0x0 = marker signature
+        255,                // 1  = 0x1 = marker signature
+        255,                // 2  = 0x2 = marker signature
+        0,                  // 3  = 0x3 = marker signature
+        grayscaleIndex[0],  // 4  = 1x0 = image index
+        grayscaleIndex[1],  // 5  = 1x1 = image index
+        grayscaleIndex[2],  // 6  = 1x2 = image index
+        grayscaleIndex[3],  // 7  = 1x3 = image index
+        grayscaleX[0],      // 8  = 2x0 = x
+        grayscaleX[1],      // 9  = 2x1 = x
+        grayscaleX[2],      // 10 = 2x2 = x
+        grayscaleX[3],      // 11 = 2x3 = x
+        grayscaleY[0],      // 12 = 3x0 = y
+        grayscaleY[1],      // 13 = 3x1 = y
+        grayscaleY[2],      // 14 = 3x2 = y
+        grayscaleY[3],      // 15 = 3x3 = y
     ];
     let p = 0;
     for (let ys = y; ys < y + MARKER_SIZE; ys++) {
         for (let xs = x; xs < x + MARKER_SIZE; xs++) {
             const j = ys * w * 4 + xs * 4;
-            if (p > 12) {
-                rgba[j] = 0;
-                rgba[j + 1] = 0;
-                rgba[j + 2] = 0;
-            } else {
-                const code = payload[p++];
-                rgba[j] = code;
-                rgba[j + 1] = code; // p === 1 ? 0 :
-                rgba[j + 2] = code;
-            }
+            const code = payload[p++];
+            rgba[j] = code;
+            rgba[j + 1] = code; // p === 1 ? 0 :
+            rgba[j + 2] = code;
             used[j] = true;
         }
     }
