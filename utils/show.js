@@ -18,7 +18,7 @@ module.exports = (rgba, w, h, zoom = 1) => {
                         showRgba[z++] = rgba[i];
                         showRgba[z++] = rgba[i + 1];
                         showRgba[z++] = rgba[i + 2];
-                        showRgba[z++] = 255;
+                        showRgba[z++] = rgba[i + 3];
                     }
                 }
             }
@@ -28,7 +28,7 @@ module.exports = (rgba, w, h, zoom = 1) => {
     }
     const imageData = new ImageData(showRgba, w, h);
     const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'position:fixed;left:0;top:0;';
+    canvas.style.cssText = 'position:fixed;left:0;top:0;background:lime';
     canvas.width = w;
     canvas.height = h;
     const context = canvas.getContext('2d');

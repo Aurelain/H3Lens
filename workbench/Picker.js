@@ -1,5 +1,6 @@
 const rgbToHex = require('../utils/rgbToHex');
 const buildSnaps = require('../utils/buildSnaps');
+const {readMarker} = require('../client/renderFrame');
 
 const snap = buildSnaps();
 const W = 800;
@@ -25,6 +26,7 @@ let offsetY;
 let db;
 let rgbas;
 let layers;
+let context;
 
 
 
@@ -34,11 +36,21 @@ const initializePicker = (theDb, theRgbas) => {
 
     picker = document.createElement('div');
     picker.style.cssText = 'position:fixed;padding:8px;background:white;z-index:1000;';
+
     pre = document.createElement('pre');
     picker.appendChild(pre);
+
+    const canvas = document.createElement('canvas');
+    context = canvas.getContext('2d');
+    canvas.width = 200;
+    canvas.height = 200;
+    picker.appendChild(canvas);
+
     document.body.appendChild(picker);
 
+
     window.addEventListener('keydown', onWindowKeyDown);
+    window.addEventListener('click', onWindowClick);
     applyIsOpen();
 };
 
@@ -79,8 +91,9 @@ const onWindowPointerMove = ({clientX, clientY}) => {
     let r = -1;
     let g = -1;
     let b = -1;
+    let rgba;
     for (let i = 0; i < layers.length; i++) {
-        const rgba = rgbas[i];
+        rgba = rgbas[i];
         if (layers[i] && rgba[j + 3] !== 0) {
             layer = layers[i];
             r = rgba[j];
@@ -115,7 +128,25 @@ const onWindowPointerMove = ({clientX, clientY}) => {
     text = text.replace('$layer', layer);
     text = text.replace('$x', x);
     text = text.replace('$y', y);
+
+    context.clearRect(0, 0, 200, 200);
+    const marker = readMarker(rgba, db, x, y);
+    if (marker) {
+        const {rgba, w, h, path} = db[marker.index];
+        text = text.replace('$path', path);
+        context.putImageData(new ImageData(rgba, w,h), 0, 0);
+    }
+
     pre.innerHTML = text;
+};
+
+
+const onWindowClick = (event) => {
+    if (event.target instanceof HTMLCanvasElement) {
+        console.log('====================');
+        console.log(JSON.stringify({zoomFactor, offsetX, offsetY}));
+        console.log(pre.innerHTML);
+    }
 };
 
 

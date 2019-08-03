@@ -1,64 +1,46 @@
-/*
-
-*/
 const rgbToDec = require('../utils/rgbToDec');
-const PALETTE = require('./PALETTE');
+const {YELLOW} = require('../utils/COMMON');
 
 const MARKER_SIZE = 4;
+const CYAN_PIXEL = Buffer.from([0,255,255,255]);
+const BLACK_PIXEL = Buffer.from([0,0,0,255]);
 
 /**
  *
- * @param db
  */
 const markAssets = (db) => {
     for (let i = 0; i < db.length; i++) {
         const {rgba, w, h} = db[i];
-        // console.log(db[i].suffix, db[i].name);
         addMarkers(rgba, w, h, i);
-        // require('../utils/show')(rgba, w, h, 5);
     }
 };
 
 /**
  *
  */
-const addMarkers = (rgba,  w, h, imageIndex) => {
-    const used = new Uint8Array(w * h * 4);
+const addMarkers = (rgba, w, h, imageIndex) => {
+    const used = new Uint8Array(w * h); // a mask that describes the marked zone with 0 and 1
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-            const i = y * w * 4 + x * 4;
-            if (used[i]) {
+            const u = y * w + x;
+            if (used[u]) {
                 x += MARKER_SIZE - 1;
                 continue;
             }
-            let isValid = true;
-            if (y + MARKER_SIZE > h || x + MARKER_SIZE > w) {
-                isValid = false;
-            } else {
-                for (let ys = y; ys < y + MARKER_SIZE; ys++) {
-                    if (isValid) {
-                        for (let xs = x; xs < x + MARKER_SIZE; xs++) {
-                            const j = ys * w * 4 + xs * 4;
-                            const n = rgbToDec(rgba[j], rgba[j + 1], rgba[j + 2]);
-                            if (PALETTE[n] || used[j]) {
-                                isValid = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            // console.log(`${x}x${y} isValid: ${isValid}`);
-            if (!isValid) {
-                const n = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
-                if (n !== 0xffff00) { // protect yellow
-                    rgba[i] = 0;
-                    rgba[i + 1] = 255;
-                    rgba[i + 2] = 255;
-                }
-            } else {
-                addMarker(rgba, x, y, w, i, imageIndex, used);
+            if (canPlaceMarker(x, y, rgba, used, w, h)) {
+                addMarker(x, y, rgba, used, w, imageIndex);
                 x += MARKER_SIZE - 1;
+            } else {
+                const i = y * w * 4 + x * 4;
+                const alpha = rgba[i + 3];
+                if (alpha === 255) { // solid color
+                    const nr = rgbToDec(rgba[i], rgba[i + 1], rgba[i + 2]);
+                    if (nr !== YELLOW) {
+                        rgba.set(BLACK_PIXEL, i);
+                    }
+                } else {
+                    rgba.set(CYAN_PIXEL, i);
+                }
             }
         }
     }
@@ -67,7 +49,26 @@ const addMarkers = (rgba,  w, h, imageIndex) => {
 /**
  *
  */
-const addMarker = (rgba, x, y, w, i, imageIndex, used) => {
+const canPlaceMarker = (x, y, rgba, used, w, h) => {
+    if (x > w - MARKER_SIZE) return; // insufficient width
+    if (y > h - MARKER_SIZE) return; // insufficient height
+    for (let ys = y; ys < y + MARKER_SIZE; ys++) {
+        for (let xs = x; xs < x + MARKER_SIZE; xs++) {
+            if (used[ys * w + xs]) return; // already used
+            const j = ys * w * 4 + xs * 4;
+            const alpha = rgba[j + 3];
+            if (alpha !== 255) return; // only solid pixels should be marked
+            const nr = rgbToDec(rgba[j], rgba[j + 1], rgba[j + 2]);
+            if (nr === YELLOW) return; // yellow must not be marked because the game uses it for flag colors
+        }
+    }
+    return true;
+};
+
+/**
+ *
+ */
+const addMarker = (x, y, rgba, used, w, imageIndex) => {
     const grayscaleIndex = convertNumberToGrayscale(imageIndex);
     const grayscaleX = convertNumberToGrayscale(x);
     const grayscaleY = convertNumberToGrayscale(y);
@@ -89,15 +90,12 @@ const addMarker = (rgba, x, y, w, i, imageIndex, used) => {
         grayscaleY[2],      // 14 = 3x2 = y
         grayscaleY[3],      // 15 = 3x3 = y
     ];
-    let p = 0;
     for (let ys = y; ys < y + MARKER_SIZE; ys++) {
         for (let xs = x; xs < x + MARKER_SIZE; xs++) {
             const j = ys * w * 4 + xs * 4;
-            const code = payload[p++];
-            rgba[j] = code;
-            rgba[j + 1] = code; // p === 1 ? 0 :
-            rgba[j + 2] = code;
-            used[j] = true;
+            const code = payload.shift();
+            rgba.fill(code, j, j + 3);
+            used[ys * w + xs] = 1; // also mark it as used
         }
     }
 };

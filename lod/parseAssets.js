@@ -11,6 +11,7 @@ const fs = require('fs');
 const zlib = require('zlib');
 const md5 = require('js-md5');
 const PALETTE = require('./PALETTE');
+const {ALPHAS} = require('../utils/COMMON');
 
 /**
  *
@@ -48,21 +49,21 @@ const parseAssets = (lodPath, db, hashes, assetPaths) => {
         list.push(item);
     }
     for (const {assetName, begin, csize, usize} of list) {
-        // if (assetName !== "GAMSELBK.PCX") continue; // main menu background bitmap, no palette
-        // if (assetName !== "HPL000KN.PCX") continue; // orrin portrait bitmap, with palette
+        // if (assetName !== "GAMSELBK.PCX") continue;      // main menu background bitmap, no palette
+        // if (assetName !== "HPL000KN.PCX") continue;      // orrin portrait bitmap, with palette
         // if (assetName !== "MMENUHS.DEF") continue;       // main menu high scores
         // if (assetName !== "MMENUQT.DEF") continue;
-        // if (assetName !== "SGTWMTA.DEF") continue; // old format
+        // if (assetName !== "SGTWMTA.DEF") continue;       // old format
         // if (assetName !== "COHDEM45.PCX") continue;
-        // if (assetName !== "HPS001PL.PCX") continue; // with palette
+        // if (assetName !== "HPS001PL.PCX") continue;      // with palette
         // if (assetName !== "AVGPIXIE.DEF") continue;
         // if (assetName !== "GRASTL.DEF") continue;        // format 0, grass
         // if (assetName !== "DIALGBOX.DEF") continue;      // format 1, dialog box
         // if (assetName !== "COBBRD.DEF") continue;        // format 2, a road
         // if (assetName !== "AH06_E.DEF") continue;        // format 3, a hero
         // if (assetName !== "MUPOPUP.PCX") continue;       // multi-player
-
-        if (assetName === "CMNUMWIN.PCX") continue;         // hit-points label gets colorized by the game
+        // if (assetName !== "AVMGOGR0.DEF") continue;      // gold mine, with yellow flag
+        // if (assetName === "CMNUMWIN.PCX") continue;      // hit-points label gets colorized by the game
 
         if (assetName.match(/\.PCX$|\.DEF$/)) {
             let itemBuffer;
@@ -120,11 +121,8 @@ const parsePcxWithPalette = (buffer, w, h) => {
     let j = 0;
     for (let i = 0; i < len; i++) {
         const colorIndex = pixels.readUInt8(i);
-        const color = palette[colorIndex];
-        rgba[j++] = color.r;
-        rgba[j++] = color.g;
-        rgba[j++] = color.b;
-        rgba[j++] = 255;
+        putPixelFromPalette(rgba, j, palette, colorIndex);
+        j += 4;
     }
     return rgba;
 };
@@ -207,11 +205,8 @@ const parseDef = (f, lodName, assetName, db, hashes, assetPaths) => {
                 for (let i = 0; i < height; i++) {
                     for (let x = 0; x < width; x++) {
                         const colorIndex = f.readUInt8(p++);
-                        const {r,g,b} = palette[colorIndex];
-                        rgba[j++] = r;
-                        rgba[j++] = g;
-                        rgba[j++] = b;
-                        rgba[j++] = 255;
+                        putPixelFromPalette(rgba, j, palette, colorIndex);
+                        j += 4;
                     }
                 }
                 break;
@@ -228,19 +223,13 @@ const parseDef = (f, lodName, assetName, db, hashes, assetPaths) => {
                             const sequence = f.slice(p, p + length);
                             p += length;
                             for (const colorIndex of sequence) {
-                                const {r, g, b} = palette[colorIndex];
-                                rgba[j++] = r;
-                                rgba[j++] = g;
-                                rgba[j++] = b;
-                                rgba[j++] = 255;
+                                putPixelFromPalette(rgba, j, palette, colorIndex);
+                                j += 4;
                             }
                         } else { // RLE
                             for (let i = 0; i < length; i++) {
-                                const {r, g, b} = palette[code];
-                                rgba[j++] = r;
-                                rgba[j++] = g;
-                                rgba[j++] = b;
-                                rgba[j++] = 255;
+                                putPixelFromPalette(rgba, j, palette, code);
+                                j += 4;
                             }
                         }
                         totalRowLength += length;
@@ -266,19 +255,13 @@ const parseDef = (f, lodName, assetName, db, hashes, assetPaths) => {
                             const sequence = f.slice(p, p + length);
                             p += length;
                             for (const colorIndex of sequence) {
-                                const {r, g, b} = palette[colorIndex];
-                                rgba[j++] = r;
-                                rgba[j++] = g;
-                                rgba[j++] = b;
-                                rgba[j++] = 255;
+                                putPixelFromPalette(rgba, j, palette, colorIndex);
+                                j += 4;
                             }
                         } else { // RLE
                             for (let i = 0; i < length; i++) {
-                                const {r, g, b} = palette[code];
-                                rgba[j++] = r;
-                                rgba[j++] = g;
-                                rgba[j++] = b;
-                                rgba[j++] = 255;
+                                putPixelFromPalette(rgba, j, palette, code);
+                                j += 4;
                             }
                         }
                         totalRowLength += length;
@@ -334,6 +317,22 @@ const keep = (rgba, w, h, lodName, assetName, frameName, db, hashes, assetPaths)
         } else { // boolean => bitmap
             assetPaths[assetPath] = db[index];
         }
+    }
+};
+
+/**
+ *
+ */
+const putPixelFromPalette = (rgba, offset, palette, colorIndex) => {
+    const {r, g, b} = palette[colorIndex];
+    const alphaPixel = ALPHAS[rgbToDec(r, g, b)];
+    if (alphaPixel) {
+        rgba.set(alphaPixel, offset);
+    } else {
+        rgba[offset] = r;
+        rgba[offset + 1] = g;
+        rgba[offset + 2] = b;
+        rgba[offset + 3] = 255;
     }
 };
 

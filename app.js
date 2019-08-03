@@ -47,18 +47,14 @@ const run = () => {
     for (const {lodPath} of lods) {
         parseAssets(lodPath, db, hashes, assetPaths);
     }
+    show(db[0].rgba, db[0].w, db[0].h, 10);
 
-    // cacheAssets(db, path.join(GAME_DATA_DIR, 'db.cache'));
-    // return;
+    cacheAssets(db, path.join(GAME_DATA_DIR, 'db.cache'));
 
-    console.log(db);
-    console.log(hashes);
-    console.log(assetPaths);
     markAssets(db);
+    show(db[0].rgba, db[0].w, db[0].h, 10);
 
-    for (const {rgba, w, h} of db) {
-        // show(rgba, w, h, 5);
-    }
+
 
     for (const {lodName, lodPath} of lods) {
         const loxPath = path.join(GAME_DATA_DIR, lodName.replace(/\.lod$/, '.lox'));

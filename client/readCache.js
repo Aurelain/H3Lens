@@ -5,10 +5,10 @@ const fs = require('fs');
 
 /**
  *
- * @param db
  * @param cachePath
  */
-const readCache = (db, cachePath) => {
+const readCache = async (cachePath) => {
+    const db = [];
     const f = fs.readFileSync(cachePath);
     let p = 0;
 
@@ -30,9 +30,10 @@ const readCache = (db, cachePath) => {
         p += 34;
 
         const rgba = new Uint8ClampedArray(f.slice(p, p + len));
+        const bmp = await createImageBitmap(new ImageData(rgba, w, h));
         p += len;
 
-        db.push({rgba, w, h, path});
+        db.push({rgba, bmp, w, h, path});
     }
     return db;
 };

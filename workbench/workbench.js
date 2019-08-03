@@ -3,24 +3,35 @@ const readCache = require('../client/readCache');
 const buildSnaps = require('../utils/buildSnaps');
 const renderFrame = require('../client/renderFrame');
 const {initializePicker, configurePicker} = require('./Picker');
+const {performance} = require('perf_hooks');
 
 const CACHE_PATH = "D:/H3/HoMM 3 Complete/Data/db.cache";
-// const TARGET = 'workbench/screens/Orrin';
-const TARGET = 'workbench/screens/MainMenu';
+const TARGET = 'workbench/screens/Orrin';
+// const TARGET = 'workbench/screens/MainMenu';
 const W = 800;
 const H = 600;
 
+const LAYER_HD = 'hd';
+const LAYER_LAZARUS = 'lazarus';
+const LAYER_STREAM_WILD_COLORS = '--stream-wild-colors';
+const LAYER_STREAM_WILD_GRAY = '--stream-wild-gray';
+const LAYER_STREAM_MARKED_REJECTED = '--stream-marked-rejected';
+const LAYER_STREAM_MARKED_APPROVED = '--stream-marked-approved';
+const LAYER_STREAM = 'stream';
+const LAYER_SNOW = 'snow';
+const LAYER_ORIGINAL = 'original';
+
+
 const list = [
-    'hd',
-    '--heat',
-    'lazarus',
-    '--stream-wild-colors',
-    '--stream-wild-gray',
-    '--stream-marked-rejected',
-    '--stream-marked-approved',
-    'stream',
-    'snow',
-    'original',
+    LAYER_HD,
+    LAYER_LAZARUS,
+    LAYER_STREAM_WILD_COLORS,
+    LAYER_STREAM_WILD_GRAY,
+    LAYER_STREAM_MARKED_REJECTED,
+    LAYER_STREAM_MARKED_APPROVED,
+    LAYER_STREAM,
+    LAYER_SNOW,
+    LAYER_ORIGINAL,
 ];
 const contexts = {};
 const screenCanvases = {};
@@ -31,12 +42,11 @@ let dragInitX;
 let dragInitY;
 let dragOffsetX;
 let dragOffsetY;
-const db = [];
 const snap = buildSnaps();
 
-const run = () => {
+const run = async () => {
 
-    readCache(db, CACHE_PATH);
+    const db = await readCache(CACHE_PATH);
 
     const options = document.createElement('div');
     document.body.appendChild(options);
@@ -46,7 +56,8 @@ const run = () => {
     options.style.right = '0';
     options.style.padding = '8px';
     options.style.zIndex = '100';
-    for (const name of list) {
+    for (let i = 0; i < list.length; i++) {
+        const name = list[i];
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.id = 'i' + name;
@@ -55,7 +66,7 @@ const run = () => {
         input.addEventListener('change', onInputChange);
 
         const label = document.createElement('label');
-        label.innerHTML = name;
+        label.innerHTML = i + ' ' + name;
         label.setAttribute('for', 'i' + name);
 
         const option = document.createElement('div');
@@ -66,37 +77,40 @@ const run = () => {
 
     const rgbas = [];
     const streamRgba = getStreamRgba();
-    for (const name of list) {
+    for (let i = 0; i < list.length; i++) {
+        const name = list[i];
         let rgba;
         switch (name) {
-            case 'hd':
+            case LAYER_HD:
                 rgba = getHdRgba();
                 break;
-            case '--heat':
-                rgba = getHeatRgba();
+            case LAYER_LAZARUS:
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = W;
+                canvas.height = H;
+                renderFrame(streamRgba.slice(), db, context);
+                rgba = context.getImageData(0, 0, W, H).data;
                 break;
-            case 'lazarus':
-                rgba = renderFrame(streamRgba, db);
-                break;
-            case '--stream-wild-colors':
+            case LAYER_STREAM_WILD_COLORS:
                 rgba = getWildColorsRgba(db, streamRgba);
                 break;
-            case '--stream-wild-gray':
+            case LAYER_STREAM_WILD_GRAY:
                 rgba = getWildGrayRgba();
                 break;
-            case '--stream-marked-rejected':
+            case LAYER_STREAM_MARKED_REJECTED:
                 rgba = getMarkedRejectedRgba();
                 break;
-            case '--stream-marked-approved':
+            case LAYER_STREAM_MARKED_APPROVED:
                 rgba = getMarkedApprovedRgba();
                 break;
-            case 'stream':
+            case LAYER_STREAM:
                 rgba = streamRgba;
                 break;
-            case 'snow':
+            case LAYER_SNOW:
                 rgba = getSnowRgba();
                 break;
-            case 'original':
+            case LAYER_ORIGINAL:
                 rgba = getOriginalRgba();
                 break;
             default:
@@ -133,6 +147,7 @@ const run = () => {
     window.addEventListener('pointerdown', onWindowPointerDown);
     window.addEventListener('mousewheel', onWindowMouseWheel);
     window.addEventListener('resize', onWindowResize);
+    window.addEventListener('keydown', onWindowKeyDown);
     refreshScreenCanvases();
 };
 
@@ -310,6 +325,16 @@ const onWindowPointerUp = () => {
 };
 
 
+const onWindowKeyDown = (event) => {
+    const nr = Number(event.key);
+    if (!isNaN(nr)) {
+        const input = document.getElementById('i' + list[nr]);
+        input.checked = !input.checked;
+        onInputChange({currentTarget:input})
+    }
+};
+
+
 const onInputChange = (event) => {
     const {name, checked} = event.currentTarget;
     localStorage.setItem(name, checked ? 'yes' : 'no');
@@ -340,4 +365,37 @@ const convertBgraToRgba = (bgraBuffer) => {
     return rgba;
 };
 
+
+const runRaf = () => {
+    const db = readCache(CACHE_PATH);
+    const streamRgba = getStreamRgba();
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = W;
+    canvas.height = H;
+
+    const RUNS = 10;
+    const DUMMY_RUNS = 3;
+    let totalDuration = 0;
+    let totalRuns = 0;
+    let rafs = 0;
+    const raf = () => {
+        rafs++;
+        const begin = performance.now();
+        renderFrame(streamRgba, db, context);
+        const end = performance.now();
+        if (rafs > DUMMY_RUNS) {
+            totalRuns++;
+            totalDuration += end - begin;
+        }
+        if (rafs > RUNS) {
+            console.log('duration:', totalDuration/totalRuns);
+        } else {
+            requestAnimationFrame(raf);
+        }
+    };
+    raf();
+};
+
 run();
+// runRaf();
