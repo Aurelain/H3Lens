@@ -2,6 +2,7 @@ const fs = require('fs');
 const zlib = require('zlib');
 const rgbToDec = require('../utils/rgbToDec');
 const show = require('../utils/show');
+const {ENCODING} = require('../utils/COMMON');
 
 const customPalette = buildCustomPalette();
 const customPaletteMap = buildPaletteMap(customPalette);
@@ -783,30 +784,24 @@ function buildCustomPalette() {
         0, 255, 0,          // game palette
         255, 128, 255,      // game palette
         255, 128, 255,      // game palette
-        0, 0, 0,
-        0x10, 0x10, 0x10,
-        0x20, 0x20, 0x20,
-        0x30, 0x30, 0x30,
-        0x40, 0x40, 0x40,
-        0x50, 0x50, 0x50,
-        0x60, 0x60, 0x60,
-        0x70, 0x70, 0x70,
-        0x80, 0x80, 0x80,
-        0x90, 0x90, 0x90,
-        0xa0, 0xa0, 0xa0,
-        0xb0, 0xb0, 0xb0,
-        0xc0, 0xc0, 0xc0,
-        0xd0, 0xd0, 0xd0,
-        0xe0, 0xe0, 0xe0,
-        0xf0, 0xf0, 0xf0,
-        0xff, 0xff, 0xff,
     ];
     const palette = new Uint8ClampedArray(256 * 3);
     for (let i = 0; i < colors.length; i++) {
         palette[i] = colors[i];
     }
+
+    let p = colors.length;
+    for (const key in ENCODING) {
+        const buffer = ENCODING[key];
+        palette.set(buffer, p);
+        p += 3;
+    }
+
+    palette.set([255, 255, 255], p); // manually add white
+    p += 3;
+
     // We must obscure the rest of the pixels because sometimes the game uses them to adapt colors to match the theme.
-    for (let i = colors.length; i < palette.length; i += 3) {
+    for (let i = p; i < palette.length; i += 3) {
         palette[i] = 200;
         palette[i + 1] = 0;
         palette[i + 2] = 200;

@@ -1,6 +1,7 @@
 const rgbToHex = require('../utils/rgbToHex');
 const buildSnaps = require('../utils/buildSnaps');
 const {readMarker} = require('../client/renderFrame');
+const {SNAP} = require('../utils/COMMON');
 
 const snap = buildSnaps();
 const W = 800;
@@ -107,7 +108,7 @@ const onWindowPointerMove = ({clientX, clientY}) => {
     picker.style.top = (clientY + 16) + 'px';
 
     const hex = rgbToHex(r, g, b).toUpperCase();
-    const hexSnap = rgbToHex(snap[r], snap[g], snap[b]).toUpperCase();
+    const hexSnap = rgbToHex(SNAP[r], SNAP[g], SNAP[b]).toUpperCase();
     let text = OUTPUT.trim();
     if (!layer) {
         text = text.replace(/\$[RGB]../g, '');
@@ -118,9 +119,9 @@ const onWindowPointerMove = ({clientX, clientY}) => {
         text = text.replace('$Rho', pad(hex[1] + hex[2]));
         text = text.replace('$Gho', pad(hex[3] + hex[4]));
         text = text.replace('$Bho', pad(hex[5] + hex[6]));
-        text = text.replace('$Rds', pad(snap[r]));
-        text = text.replace('$Gds', pad(snap[g]));
-        text = text.replace('$Bds', pad(snap[b]));
+        text = text.replace('$Rds', pad(SNAP[r]));
+        text = text.replace('$Gds', pad(SNAP[g]));
+        text = text.replace('$Bds', pad(SNAP[b]));
         text = text.replace('$Rhs', pad(hexSnap[1] + hexSnap[2]));
         text = text.replace('$Ghs', pad(hexSnap[3] + hexSnap[4]));
         text = text.replace('$Bhs', pad(hexSnap[5] + hexSnap[6]));
@@ -130,13 +131,14 @@ const onWindowPointerMove = ({clientX, clientY}) => {
     text = text.replace('$y', y);
 
     context.clearRect(0, 0, 200, 200);
+    /*
     const marker = readMarker(rgba, db, x, y);
     if (marker) {
         const {rgba, w, h, path} = db[marker.index];
         text = text.replace('$path', path);
         context.putImageData(new ImageData(rgba, w,h), 0, 0);
     }
-
+*/
     pre.innerHTML = text;
 };
 

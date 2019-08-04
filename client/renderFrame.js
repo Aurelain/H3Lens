@@ -1,5 +1,4 @@
-const {SNAP, ENCODING, W, H} = require('../utils/COMMON');
-const PALETTE = require('../lod/PALETTE');
+const {SNAP, DECODING, W, H, MARKER} = require('../utils/COMMON');
 const SIGNATURE_WHITE_THRESHOLD = 240;
 const SIGNATURE_BLACK_THRESHOLD = 8;
 const MAX_VOTES = 100;
@@ -25,7 +24,7 @@ const renderFrame = (rgba, db, context) => {
                     candidate.votes++;
                     candidate.list.push(marker);
                     consumeArea(consumed, x, y, 4, 4);
-                    x += 3; // skip the remaining pixels in the first line of the marker
+                    x += MARKER - 1; // skip the remaining pixels in the first line of the marker
                     // TODO: see if we can also skip MARKER_SIZE in the following lines
                 } else {
 
@@ -76,70 +75,68 @@ const renderFrame = (rgba, db, context) => {
 
     computeElevations(winners);
     winners.sort(sortByElevation);
-    console.log(winners);
+    // console.log(winners);
 
     for (const {dbItem, w, h, T, L} of winners) {
         const {rgba, bmp, w, h} = dbItem;
-        // context.putImageData(new ImageData(rgba, w, h), L, T);
         context.drawImage(bmp, L, T);
     }
-
-    // console.log(elections);
-    // console.log(JSON.stringify(winners));
-
-    //     const pojo = candidates[key];
-    //     const {votes, dbItem, originX, originY} = pojo;
-    //     if (votes > 200) {
-    //         const {rgba, w, h} = dbItem;
-    //         context2.putImageData(new ImageData(rgba, w, h), originX, originY);
-    //     }
-    // }
 };
 
 /**
  *
  */
 const readMarker = (rgba, db, x, y) => {
-    if (x > W - 4) return;
-    if (y > H - 4) return;
+    if (x > W - MARKER) return;
+    if (y > H - MARKER) return;
 
     let p = y * W * 4 + x * 4;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
         if (rgba[p++] < SIGNATURE_WHITE_THRESHOLD) return;
         if (rgba[p++] < SIGNATURE_WHITE_THRESHOLD) return;
         if (rgba[p++] < SIGNATURE_WHITE_THRESHOLD) return;
         p++; // skip alpha
     }
 
-    if (rgba[p++] > SIGNATURE_BLACK_THRESHOLD) return;
-    if (rgba[p++] > SIGNATURE_BLACK_THRESHOLD) return;
-    if (rgba[p] > SIGNATURE_BLACK_THRESHOLD) return;
+    const n1 = DECODING[SNAP[rgba[p]]];
 
-    const limits = [db.length, W, H];
-    const numbers = [];
-    for (let i = 0; i < 3; i++) {
-        p = (y + 1 + i) * W * 4 + x * 4;
+    p = (y + 1) * W * 4 + x * 4; // next line
 
-        const n1 = SNAP[rgba[p++]];
-        p += 3; // skip the remaining g+b+a
+    const n2 = DECODING[SNAP[rgba[p++]]];
+    p += 3; // skip the remaining g+b+a
 
-        const n2 = SNAP[rgba[p++]];
-        p += 3; // skip the remaining g+b+a
+    const n3 = DECODING[SNAP[rgba[p++]]];
+    p += 3; // skip the remaining g+b+a
 
-        const n3 = SNAP[rgba[p++]];
-        p += 3; // skip the remaining g+b+a
+    const n = parseInt(n1 + n2 + n3, 32);
 
-        const n4 = SNAP[rgba[p]];
+    if (isNaN(n) || n < 0 || n >= db.length) return;
 
-        const nr = Number('0x' + ENCODING[n1] + ENCODING[n2] + ENCODING[n3] + ENCODING[n4]);
-        if (isNaN(nr) || nr < 0 || nr >= limits[i]) return;
-        numbers[i] = nr;
-    }
+    const left1 = DECODING[SNAP[rgba[p]]];
+
+    p = (y + 2) * W * 4 + x * 4; // next line
+
+    const left2 = DECODING[SNAP[rgba[p++]]];
+    p += 3; // skip the remaining g+b+a
+
+    const left = parseInt([left1,left2].join(''), 32);
+
+    if (isNaN(left) || left < 0 || left >= 800) return;
+
+    const top1 = DECODING[SNAP[rgba[p++]]];
+    p += 3; // skip the remaining g+b+a
+
+    const top2 = DECODING[SNAP[rgba[p++]]];
+
+    const top = parseInt(top1 + top2 + '', 32);
+
+    if (isNaN(top) || top < 0 || top >= 600) return;
+
 
     return {
-        index: numbers[0],
-        ox: x - numbers[1],
-        oy: y - numbers[2],
+        index: n,
+        ox: x - left,
+        oy: y - top,
         x,
         y,
     };
@@ -224,7 +221,7 @@ const computeElevations = (list) => {
             if (!obscuredByA && !obscuredByB) {
                 continue;
             }
-            const level = (obscuredByA > obscuredByB)? 1 : -1;
+            const level = (obscuredByA > obscuredByB) ? 1 : -1;
             a.elevation += level;
             b.elevation += level * -1;
 
@@ -232,12 +229,12 @@ const computeElevations = (list) => {
                 console.log('===============');
                 if (isInterestingA) {
                     console.log(pathA, 'vs', pathB);
-                    console.log(level === 1? 'MASTER' : 'slave');
+                    console.log(level === 1 ? 'MASTER' : 'slave');
                     console.log('elevation', a.elevation);
                     console.log('score', obscuredByA + ':' + obscuredByB);
                 } else {
                     console.log(pathB, 'vs', pathA);
-                    console.log(level === 1? 'slave' : 'MASTER');
+                    console.log(level === 1 ? 'slave' : 'MASTER');
                     console.log('elevation', b.elevation);
                     console.log('score', obscuredByB + ':' + obscuredByA);
                 }

@@ -6,7 +6,6 @@ const parseAssets = require('./lod/parseAssets');
 const markAssets = require('./lod/markAssets');
 const injectAssets = require('./lod/injectAssets');
 const cacheAssets = require('./lod/cacheAssets');
-const PALETTE = require('./lod/PALETTE');
 const rgbToDec = require('./utils/rgbToDec');
 const show = require('./utils/show');
 
@@ -53,8 +52,6 @@ const run = () => {
 
     markAssets(db);
     show(db[0].rgba, db[0].w, db[0].h, 10);
-
-
 
     for (const {lodName, lodPath} of lods) {
         const loxPath = path.join(GAME_DATA_DIR, lodName.replace(/\.lod$/, '.lox'));

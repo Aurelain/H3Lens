@@ -6,7 +6,7 @@ const {initializePicker, configurePicker} = require('./Picker');
 const {performance} = require('perf_hooks');
 
 const CACHE_PATH = "D:/H3/HoMM 3 Complete/Data/db.cache";
-const TARGET = 'workbench/screens/Orrin';
+const TARGET = 'workbench/samples/Orrin';
 // const TARGET = 'workbench/screens/MainMenu';
 const W = 800;
 const H = 600;
@@ -35,9 +35,9 @@ const list = [
 ];
 const contexts = {};
 const screenCanvases = {};
-let zoomFactor = 1;
-let offsetX = 0;
-let offsetY = 0;
+let zoomFactor = Number(window.localStorage.getItem('zoomFactor')) || 1;
+let offsetX = Number(window.localStorage.getItem('offsetX')) || 0;
+let offsetY = Number(window.localStorage.getItem('offsetY')) || 0;
 let dragInitX;
 let dragInitY;
 let dragOffsetX;
@@ -248,7 +248,9 @@ const refreshScreenCanvases = () => {
         const amplifiedImageData = new ImageData(amplifiedRgba, neededWidth * zoomFactor, neededHeight * zoomFactor);
         screenCanvas.getContext('2d').putImageData(amplifiedImageData, 0, 0);
     }
-
+    window.localStorage.setItem('zoomFactor', zoomFactor);
+    window.localStorage.setItem('offsetX', offsetX);
+    window.localStorage.setItem('offsetY', offsetY);
     refreshPicker();
 };
 
@@ -287,6 +289,7 @@ const onWindowMouseWheel = (event) => {
     if (zoomFactor === oldZoomFactor) {
         return;
     }
+
     const mouseIsAboveX = Math.round(offsetX + clientX / oldZoomFactor);
     offsetX = Math.max(Math.round(mouseIsAboveX - clientX / zoomFactor), 0);
     const mouseIsAboveY = Math.round(offsetY + clientY / oldZoomFactor);
@@ -366,8 +369,8 @@ const convertBgraToRgba = (bgraBuffer) => {
 };
 
 
-const runRaf = () => {
-    const db = readCache(CACHE_PATH);
+const runRaf = async () => {
+    const db = await readCache(CACHE_PATH);
     const streamRgba = getStreamRgba();
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
