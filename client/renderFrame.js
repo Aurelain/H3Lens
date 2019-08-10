@@ -40,27 +40,24 @@ const renderFrame = (rgba, db, context) => {
         let maxVotes = -1;
         for (const candidateIndex in election) {
             const {votes, list} = election[candidateIndex];
-            if (votes > maxVotes) {
+            if (votes > 1) {
                 maxVotes = votes;
                 bestList = list;
+                const {index, ox, oy} = bestList[0];
+                const dbItem = db[index];
+                const {w, h} = dbItem;
+                winners.push({
+                    dbItem,
+                    L: ox,
+                    R: ox + w,
+                    T: oy,
+                    B: oy + h,
+                    markers: bestList,
+                    i: winners.length,
+                    elevation: 0,
+                });
             }
         }
-        if (maxVotes < 3) {
-            continue;
-        }
-        const {index, ox, oy} = bestList[0];
-        const dbItem = db[index];
-        const {w, h} = dbItem;
-        winners.push({
-            dbItem,
-            L: ox,
-            R: ox + w,
-            T: oy,
-            B: oy + h,
-            markers: bestList,
-            i: winners.length,
-            elevation: 0,
-        });
         // if (dbItem.path.match(/TGRB002.PCX/)) {
         //     console.log(winners.length - 1);
         // }
@@ -189,30 +186,14 @@ const computeElevations = (list) => {
             const a = list[i];
             const b = list[k];
 
-            const pathA = a.dbItem.path + `(${a.i})`;
-            const pathB = b.dbItem.path + `(${b.i})`;
-            const isInterestingA = pathA.match(/AVGGRM15.PCX/);
-            const isInterestingB = pathB.match(/AVGGRM15.PCX/);
-            const isInteresting = isInterestingA || isInterestingB;
-            if (isInteresting) {
-                // console.log('===============');
-                // console.log(pathA + ' vs ' + pathB);
-            }
-
             const L = Math.max(a.L, b.L);
             const R = Math.min(a.R, b.R);
             if (L >= R) {
-                if (isInteresting) {
-                    // console.log('not intersected');
-                }
                 continue;
             }
             const T = Math.max(a.T, b.T);
             const B = Math.min(a.B, b.B);
             if (T >= B) {
-                if (isInteresting) {
-                    // console.log('not intersected');
-                }
                 continue;
             }
 
@@ -224,21 +205,6 @@ const computeElevations = (list) => {
             const level = (obscuredByA > obscuredByB) ? 1 : -1;
             a.elevation += level;
             b.elevation += level * -1;
-
-            if (isInteresting) {
-                console.log('===============');
-                if (isInterestingA) {
-                    console.log(pathA, 'vs', pathB);
-                    console.log(level === 1 ? 'MASTER' : 'slave');
-                    console.log('elevation', a.elevation);
-                    console.log('score', obscuredByA + ':' + obscuredByB);
-                } else {
-                    console.log(pathB, 'vs', pathA);
-                    console.log(level === 1 ? 'slave' : 'MASTER');
-                    console.log('elevation', b.elevation);
-                    console.log('score', obscuredByB + ':' + obscuredByA);
-                }
-            }
         }
     }
 };

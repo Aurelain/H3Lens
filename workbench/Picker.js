@@ -131,14 +131,14 @@ const onWindowPointerMove = ({clientX, clientY}) => {
     text = text.replace('$y', y);
 
     context.clearRect(0, 0, 200, 200);
-    /*
+
     const marker = readMarker(rgba, db, x, y);
     if (marker) {
         const {rgba, w, h, path} = db[marker.index];
         text = text.replace('$path', path);
         context.putImageData(new ImageData(rgba, w,h), 0, 0);
     }
-*/
+
     pre.innerHTML = text;
 };
 
